@@ -1,0 +1,410 @@
+---
+title: "Mechanical Complications of ECMO: Analysis of Time to First Event"
+author: "Camden Lopez"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = FALSE,
+                      warning = FALSE,
+                      fig.width = 7,
+                      fig.height = 7)
+
+library(coxme)
+library(ehahelper)
+library(knitr)
+library(mice)
+library(tidyverse)
+source("00_helpers.R")
+
+theme_set(theme_light())
+
+load("ecmo.mi.RData")
+```
+
+# Pump failure
+
+```{r}
+tbl.pump.fail <- NULL
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.bl,
+                 coxme(Surv(pump.fail.hr, pump.fail.event) ~
+                         sex +
+                         weight..20kg +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.bl,
+                 coxme(Surv(pump.fail.hr, pump.fail.event) ~
+                         age..10yr +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.bl,
+                 coxme(Surv(pump.fail.hr, pump.fail.event) ~
+                         sbp..20mmhg +
+                         dbp..10mmhg +
+                         ph..0.1 +
+                         pco2..20mmhg +
+                         lactate..log2 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.hr30,
+                 coxme(Surv(pump.fail.hr.after.30hr, pump.fail.event.after.30hr) ~
+                         sbp.24..20mmhg +
+                         dbp.24..10mmhg +
+                         ph.24..0.1 +
+                         pco2.24..20mmhg +
+                         lactate.24..log2 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.bl,
+                 coxme(Surv(pump.fail.hr, pump.fail.event) ~
+                         cardiac.arrest +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.bl,
+                 coxme(Surv(pump.fail.hr, pump.fail.event) ~
+                         sepsis.primary.or.with.vasoact +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.bl %>%
+                   complete(action = "long", include = TRUE) %>%
+                   filter(!pre.existing.tracheostomy) %>%
+                   as.mids(),
+                 coxme(Surv(pump.fail.hr, pump.fail.event) ~
+                         vent..log2 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.bl,
+                 coxme(Surv(pump.fail.hr, pump.fail.event) ~
+                         pf.ratio..log2 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.hr30,
+                 coxme(Surv(pump.fail.hr.after.30hr, pump.fail.event.after.30hr) ~
+                         pf.ratio.24..log2 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.hr6,
+                 coxme(Surv(pump.fail.hr.after.6hr, pump.fail.event.after.6hr) ~
+                         sex +
+                         weight..20kg +
+                         pump.flow.4 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.hr30,
+                 coxme(Surv(pump.fail.hr.after.30hr, pump.fail.event.after.30hr) ~
+                         sex +
+                         weight..20kg +
+                         pump.flow.24 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+```
+
+```{r}
+tbl.pump.fail <-
+  tbl.pump.fail %>%
+  mutate(haz.ratio =
+           sprintf("%.2f (%.2f, %.2f)",
+                   estimate, ci.lower, ci.upper),
+         p.val =
+           sapply(p.value, format_pval))
+
+tbl.pump.fail %>%
+  select(term, haz.ratio, p.val) %>%
+  kable()
+
+tbl.pump.fail %>%
+  write_csv("../Output/estimates.pump.fail.hr.csv")
+```
+
+\pagebreak
+
+# Oxygenator failure
+
+```{r}
+tbl.oxy.fail <- NULL
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.bl,
+                 coxme(Surv(oxy.fail.hr, oxy.fail.event) ~
+                         sex +
+                         weight..20kg +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.bl,
+                 coxme(Surv(oxy.fail.hr, oxy.fail.event) ~
+                         age..10yr +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.bl,
+                 coxme(Surv(oxy.fail.hr, oxy.fail.event) ~
+                         sbp..20mmhg +
+                         dbp..10mmhg +
+                         ph..0.1 +
+                         pco2..20mmhg +
+                         lactate..log2 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.hr30,
+                 coxme(Surv(oxy.fail.hr.after.30hr, oxy.fail.event.after.30hr) ~
+                         sbp.24..20mmhg +
+                         dbp.24..10mmhg +
+                         ph.24..0.1 +
+                         pco2.24..20mmhg +
+                         lactate.24..log2 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.bl,
+                 coxme(Surv(oxy.fail.hr, oxy.fail.event) ~
+                         cardiac.arrest +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.bl,
+                 coxme(Surv(oxy.fail.hr, oxy.fail.event) ~
+                         sepsis.primary.or.with.vasoact +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.bl %>%
+                   complete(action = "long", include = TRUE) %>%
+                   filter(!pre.existing.tracheostomy) %>%
+                   as.mids(),
+                 coxme(Surv(oxy.fail.hr, oxy.fail.event) ~
+                         vent..log2 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.bl,
+                 coxme(Surv(oxy.fail.hr, oxy.fail.event) ~
+                         pf.ratio..log2 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.hr30,
+                 coxme(Surv(oxy.fail.hr.after.30hr, oxy.fail.event.after.30hr) ~
+                         pf.ratio.24..log2 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.hr6,
+                 coxme(Surv(oxy.fail.hr.after.6hr, oxy.fail.event.after.6hr) ~
+                         sex +
+                         weight..20kg +
+                         pump.flow.4 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.hr30,
+                 coxme(Surv(oxy.fail.hr.after.30hr, oxy.fail.event.after.30hr) ~
+                         sex +
+                         weight..20kg +
+                         pump.flow.24 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+```
+
+```{r}
+tbl.oxy.fail <-
+  tbl.oxy.fail %>%
+  mutate(haz.ratio =
+           sprintf("%.2f (%.2f, %.2f)",
+                   estimate, ci.lower, ci.upper),
+         p.val =
+           sapply(p.value, format_pval))
+
+tbl.oxy.fail %>%
+  select(term, haz.ratio, p.val) %>%
+  kable()
+
+tbl.oxy.fail %>%
+  write_csv("../Output/estimates.oxy.fail.hr.csv")
+```
+
+\pagebreak
+
+# Circuit clot
+
+```{r}
+tbl.circuit.clot <- NULL
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.bl,
+                 coxme(Surv(circuit.clot.hr, circuit.clot.event) ~
+                         sex +
+                         weight..20kg +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.bl,
+                 coxme(Surv(circuit.clot.hr, circuit.clot.event) ~
+                         age..10yr +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.bl,
+                 coxme(Surv(circuit.clot.hr, circuit.clot.event) ~
+                         sbp..20mmhg +
+                         dbp..10mmhg +
+                         ph..0.1 +
+                         pco2..20mmhg +
+                         lactate..log2 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.hr30,
+                 coxme(Surv(circuit.clot.hr.after.30hr, circuit.clot.event.after.30hr) ~
+                         sbp.24..20mmhg +
+                         dbp.24..10mmhg +
+                         ph.24..0.1 +
+                         pco2.24..20mmhg +
+                         lactate.24..log2 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.bl,
+                 coxme(Surv(circuit.clot.hr, circuit.clot.event) ~
+                         cardiac.arrest +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.bl,
+                 coxme(Surv(circuit.clot.hr, circuit.clot.event) ~
+                         sepsis.primary.or.with.vasoact +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.bl %>%
+                   complete(action = "long", include = TRUE) %>%
+                   filter(!pre.existing.tracheostomy) %>%
+                   as.mids(),
+                 coxme(Surv(circuit.clot.hr, circuit.clot.event) ~
+                         vent..log2 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.bl,
+                 coxme(Surv(circuit.clot.hr, circuit.clot.event) ~
+                         pf.ratio..log2 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.hr30,
+                 coxme(Surv(circuit.clot.hr.after.30hr, circuit.clot.event.after.30hr) ~
+                         pf.ratio.24..log2 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.hr6,
+                 coxme(Surv(circuit.clot.hr.after.6hr, circuit.clot.event.after.6hr) ~
+                         sex +
+                         weight..20kg +
+                         pump.flow.4 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.hr30,
+                 coxme(Surv(circuit.clot.hr.after.30hr, circuit.clot.event.after.30hr) ~
+                         sex +
+                         weight..20kg +
+                         pump.flow.24 +
+                         (1 | center.id))) %>%
+              coxme_pool_and_estimate())
+```
+
+```{r}
+tbl.circuit.clot <-
+  tbl.circuit.clot %>%
+  mutate(haz.ratio =
+           sprintf("%.2f (%.2f, %.2f)",
+                   estimate, ci.lower, ci.upper),
+         p.val =
+           sapply(p.value, format_pval))
+
+tbl.circuit.clot %>%
+  select(term, haz.ratio, p.val) %>%
+  kable()
+
+tbl.circuit.clot %>%
+  write_csv("../Output/estimates.circuit.clot.hr.csv")
+```

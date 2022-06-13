@@ -1,0 +1,208 @@
+---
+title: "Association of Socioeconomic Factors and Progression of Kidney Disease: Preliminary Analysis"
+author: "Camden Lopez"
+date: "`r Sys.Date()`"
+output: pdf_document
+classoption: landscape
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = FALSE,
+                      warning = FALSE,
+                      results = "asis",
+                      fig.width = 8,
+                      fig.height = 7)
+
+library(arsenal)
+library(knitr)
+library(survminer)
+library(survival)
+library(tidyverse)
+source("00_helpers.R")
+
+theme_set(theme_light())
+
+load("neptune.RData")
+```
+
+# ESRD or eGFR -40%
+
+## Pediatric
+
+```{r}
+fit <-
+  survfit(Surv(bl.to.esrd.egfr40 / 365.25, esrd.egfr40) ~ cohort,
+          data = pt.ped)
+names(fit$strata) <- sub("cohort=", "", names(fit$strata))
+
+plt <-
+  fit %>%
+  survfitms_to_survfit() %>%
+  ggsurvplot(fun = function (y) 1 - y,
+             risk.table = TRUE,
+             tables.height = 0.3,
+             break.x.by = 1,
+             xlab = "Years after baseline visit",
+             ylab = "Probability of ESRD or eGFR -40%")
+plt$plot <-
+  plt$plot +
+  theme(legend.position = c(0.2, 0.8),
+        legend.text = element_text(size = 14),
+        legend.title = element_blank())
+
+plt
+```
+
+```{r}
+modelsum(Surv(bl.to.esrd.egfr40, esrd.egfr40 == "Progression") ~
+           age.bl +
+           sex +
+           cohort +
+           egfr.bl +
+           upcr.bl +
+           imm.supp +
+           raas.blk +
+           wgt.bl +
+           htn.bl +
+           fam.hist,
+         family = survival,
+         data = pt.ped) %>%
+  summary()
+```
+
+```{r}
+modelsum(Surv(bl.to.esrd.egfr40, esrd.egfr40 == "Progression") ~
+           race +
+           hispanic +
+           er.visits +
+           hosp.visits +
+           well.visits +
+           ins.status +
+           income +
+           educ.m +
+           educ.f +
+           english.prim,
+         family = survival,
+         data = pt.ped) %>%
+  summary()
+```
+
+\pagebreak
+
+## Adult
+
+```{r}
+fit <-
+  survfit(Surv(bl.to.esrd.egfr40 / 365.25, esrd.egfr40) ~ cohort,
+          data = pt.adult)
+names(fit$strata) <- sub("cohort=", "", names(fit$strata))
+
+plt <-
+  fit %>%
+  survfitms_to_survfit() %>%
+  ggsurvplot(fun = function (y) 1 - y,
+             risk.table = TRUE,
+             tables.height = 0.3,
+             break.x.by = 1,
+             xlab = "Years after baseline visit",
+             ylab = "Probability of ESRD or eGFR -40%")
+plt$plot <-
+  plt$plot +
+  theme(legend.position = c(0.15, 0.85),
+        legend.text = element_text(size = 14),
+        legend.title = element_blank())
+
+plt
+```
+
+```{r}
+modelsum(Surv(bl.to.esrd.egfr40, esrd.egfr40 == "Progression") ~
+           age.bl +
+           sex +
+           cohort +
+           egfr.bl +
+           upcr.bl +
+           imm.supp +
+           raas.blk +
+           wgt.bl +
+           htn.bl +
+           fam.hist,
+         family = survival,
+         data = pt.adult) %>%
+  summary()
+```
+
+```{r}
+modelsum(Surv(bl.to.esrd.egfr40, esrd.egfr40 == "Progression") ~
+           race +
+           hispanic +
+           er.visits +
+           hosp.visits +
+           well.visits +
+           ins.status +
+           income +
+           educ +
+           english.prim,
+         family = survival,
+         data = pt.adult) %>%
+  summary()
+```
+
+\pagebreak
+
+# Remission
+
+## Pediatric
+
+```{r}
+fit <-
+  survfit(Surv(bl.to.cr / 365.25, cr) ~ cohort,
+          data = pt.ped)
+names(fit$strata) <- sub("cohort=", "", names(fit$strata))
+
+plt <-
+  fit %>%
+  survfitms_to_survfit(event = "Remission") %>%
+  ggsurvplot(fun = function (y) 1 - y,
+             risk.table = TRUE,
+             tables.height = 0.3,
+             break.x.by = 1,
+             xlab = "Years after baseline visit",
+             ylab = "Probability of complete remission")
+plt$plot <-
+  plt$plot +
+  theme(legend.position = c(0.7, 0.25),
+        legend.text = element_text(size = 14),
+        legend.title = element_blank())
+
+plt
+```
+
+\pagebreak
+
+## Adult
+
+```{r}
+fit <-
+  survfit(Surv(bl.to.cr / 365.25, cr) ~ cohort,
+          data = pt.adult)
+names(fit$strata) <- sub("cohort=", "", names(fit$strata))
+
+plt <-
+  fit %>%
+  survfitms_to_survfit(event = "Remission") %>%
+  ggsurvplot(fun = function (y) 1 - y,
+             risk.table = TRUE,
+             tables.height = 0.3,
+             break.x.by = 1,
+             xlab = "Years after baseline visit",
+             ylab = "Probability of complete remission")
+plt$plot <-
+  plt$plot +
+  theme(legend.position = c(0.7, 0.25),
+        legend.text = element_text(size = 14),
+        legend.title = element_blank())
+
+plt
+```

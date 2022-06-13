@@ -1,0 +1,543 @@
+---
+title: "Secondary Analysis of BMI$^2$ Trial: Data Prep"
+author: "Camden Lopez"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = FALSE,
+                      warning = FALSE,
+                      results = "asis",
+                      fig.width = 7,
+                      fig.height = 7)
+
+library(arsenal)
+library(broom.mixed)
+library(corrplot)
+library(haven)
+library(janitor)
+library(knitr)
+library(lme4)
+library(lmerTest)
+library(tidyverse)
+source("00_helpers.R")
+
+theme_set(theme_light())
+```
+
+```{r}
+raw.spss <-
+  read_spss("../Data/StrippedProject2 Course.sav") %>%
+  clean_names(sep_out = ".")
+
+raw <-
+  read_csv("../Data/Full-dataset-includingSnacks.csv",
+           col_types =
+             cols(DOB = col_date(format = "%m/%d/%Y"),
+                  PV_Base_DOV = col_date(format = "%m/%d/%Y"),
+                  PV_YR1_DOV = col_date(format = "%m/%d/%Y"),
+                  PV_FIN_DOV = col_date(format = "%m/%d/%Y"),
+                  MD1_DOV = col_date(format = "%m/%d/%Y"),
+                  MD2_DOV = col_date(format = "%m/%d/%Y"),
+                  MD3_DOV = col_date(format = "%m/%d/%Y"),
+                  MD4_DOV = col_date(format = "%m/%d/%Y"),
+                  RD1_DOV = col_date(format = "%m/%d/%Y"),
+                  RD2_DOV = col_date(format = "%m/%d/%Y"),
+                  RD3_DOV = col_date(format = "%m/%d/%Y"),
+                  RD4_DOV = col_date(format = "%m/%d/%Y"),
+                  RD5_DOV = col_date(format = "%m/%d/%Y"),
+                  RD6_DOV = col_date(format = "%m/%d/%Y"))) %>%
+  clean_names(sep_out = ".")
+
+# https://www.cdc.gov/growthcharts/percentile_data_files.htm
+bmi.age <-
+  bind_rows(read_csv("../Data/bmiagerev.csv", n_max = 219, col_types = cols()),
+            read_csv("../Data/bmiagerev.csv", skip = 220, col_types = cols())) %>%
+  clean_names(sep_out = ".") %>%
+  mutate(gender = factor(sex, levels = 1:2, labels = c("Male", "Female"))) %>%
+  filter(agemos > 24, agemos < 240) %>%
+  mutate(agemos = floor(agemos))
+```
+
+```{r}
+pts <-
+  raw %>%
+  # Filter out ineligible patients
+  filter(pv.base.bmi.p >= 85 & pv.base.bmi.p <= 97) %>%
+  mutate(mi.treatment =
+           factor(random.grp, levels = 1:3,
+                  labels = c("Group 1: Usual care", "Group 2: PCP only", "Group 3: PCP + RD")),
+         dropped = dropstatus %in% 1,
+         age.bl = as.integer(pv.base.dov - dob) / 365,
+         age.y1 = as.integer(pv.yr1.dov - dob) / 365,
+         age.y2 = as.integer(pv.fin.dov - dob) / 365,
+         race =
+           factor(race,
+                  levels = 1:5,
+                  labels = c("White", "Black", "Hispanic", "Asian", "Other")),
+         gender =
+           factor(gender, levels = 1:2,
+                  labels = c("Male", "Female")),
+         parent.income =
+           case_when(par.in.cx %in% 1:3 ~ "<40k/year",
+                     par.in.cx %in% 4:8 ~ ">40k/year") %>%
+           factor(levels = c("<40k/year", ">40k/year")),
+         # parent.income =
+         #   factor(parentincomehilow,
+         #          levels = 1:2,
+         #          labels = c("<40k", ">40k")),
+         parent.education =
+           case_when(par.ed.ux %in% 1:5 ~ "Less than college",
+                     par.ed.ux %in% 6:7 ~ "College or higher") %>%
+           factor(levels = c("Less than college", "College or higher")),
+         bmi.p.diff = pv.fin.bmi.p - pv.base.bmi.p) %>%
+  select(patient.id,
+         prac.id,
+         mi.treatment,
+         dropped,
+         race,
+         gender,
+         parent.bmi.bl = parent.bmix,
+         parent.income,
+         parent.education,
+         age.bl,
+         bmi.bl = pv.base.bmi.s,
+         bmi.p.bl = pv.base.bmi.p,
+         age.y1,
+         bmi.y1 = pv.yr1.bmi.s,
+         bmi.p.y1 = pv.yr1.bmi.p,
+         age.y2,
+         bmi.y2 = pv.fin.bmi.s,
+         bmi.p.y2 = pv.fin.bmi.p,
+         bmi.p.diff)
+  
+dates <-
+  raw %>%
+  select(patient.id,
+         ends_with(".dov")) %>%
+  mutate_at(vars(-patient.id, -pv.base.dov), as.character) %>%
+  gather(key = "event", value = "date", -patient.id, -pv.base.dov) %>%
+  mutate(event =
+           sub("\\.dov", "", event) %>%
+           factor(levels =
+                    c(paste0("pv.", c("yr1", "fin")),
+                      paste0("md", 1:4),
+                      paste0("rd", 1:6))),
+         date = as.Date(date),
+         months.after.bl =
+           as.integer(date - pv.base.dov) / 365 * 12)
+
+bmi.calc <-
+  pts %>%
+  select(patient.id, gender, age.bl, age.y1, age.y2) %>%
+  gather(key = "time", value = "age", -patient.id, -gender) %>%
+  mutate(time = sub("age.", "", time)) %>%
+  mutate(agemos = floor(age * 12)) %>%
+  left_join(pts %>%
+              select(patient.id, bmi.bl, bmi.y1, bmi.y2) %>%
+              gather(key = "time", value = "bmi", -patient.id) %>%
+              mutate(time = sub("bmi.", "", time)),
+            by = c("patient.id", "time")) %>%
+  left_join(bmi.age %>%
+              select(gender, agemos, l, m, s),
+            by = c("gender", "agemos")) %>%
+  mutate(bmi.z = ((bmi / m)^l - 1) / (l * s),
+         bmi.p = 100 * pnorm(bmi.z),
+         bmi.dist.med = (bmi - m) / (m * s))
+
+snacks <-
+  raw %>%
+  select(patient.id,
+         snchip.sx:snpizz.ax,
+         snchipsy:snpizzay,
+         snchipsz:snpizzaz) %>%
+  rename_at(vars(snchip.sx:snpizzaz),
+            function (x) {
+              gsub("\\.", "", x) %>%
+                sub("x$", ".bl", .) %>%
+                sub("y$", ".y1", .) %>%
+                sub("z$", ".y2", .)
+            }) %>%
+  mutate_at(vars(snchips.bl:snpizza.y2),
+            function (x) {
+              case_when(x %in% 0:1 ~ x == 1,
+                        x %in% 99 ~ NA)
+            }) %>%
+  gather(key = "var", value = "response",
+         -patient.id) %>%
+  extract(col = var,
+          into = c("snack", "time"),
+          regex = "^([a-z]+)\\.([^.]+)$") %>%
+  mutate(unhealthy =
+           snack %in%
+           c("snchips", "snpopta", "snffcan",
+             "snchoco", "sncakes", "sncokbr",
+             "snjello", "snicecr"),
+         neutral =
+           snack %in%
+           c("snpretz", "snpop", "snpbck",
+             "sngoldc", "snsfjel", "snfroup",
+             "snyogur", "sngrano", "sncerea",
+             "snsandw", "snpizza"),
+         healthy =
+           snack %in%
+           c("snchees", "snfruit", "snveget",
+             "snnuts"))
+
+snack.scores <-
+  snacks %>%
+  group_by(patient.id, time) %>%
+  summarize(snack.s1 =
+              sum(unhealthy * response),
+            snack.s2 =
+              (1/3) * sum(neutral * response) +
+              sum(unhealthy * response),
+            snack.s3 =
+              sum(neutral * response) +
+              sum(unhealthy * response),
+            n.checked = sum(response),
+            .groups = "drop")
+
+pts <-
+  pts %>%
+  left_join(bmi.calc %>%
+              select(patient.id, time, bmi.p) %>%
+              mutate(time = paste0("bmi.p.calc.", time)) %>%
+              spread(key = time, value = bmi.p),
+            by = "patient.id") %>%
+  left_join(bmi.calc %>%
+              select(patient.id, time, bmi.dist.med) %>%
+              mutate(time = paste0("bmi.dist.med.", time)) %>%
+              spread(key = time, value = bmi.dist.med),
+            by = "patient.id") %>%
+  left_join(snack.scores %>%
+              select(patient.id, time, snack.s1) %>%
+              mutate(time = paste0("snack.s1.", time)) %>%
+              spread(key = time, value = snack.s1),
+            by = "patient.id") %>%
+  left_join(snack.scores %>%
+              select(patient.id, time, snack.s2) %>%
+              mutate(time = paste0("snack.s2.", time)) %>%
+              spread(key = time, value = snack.s2),
+            by = "patient.id") %>%
+  left_join(snack.scores %>%
+              select(patient.id, time, snack.s3) %>%
+              mutate(time = paste0("snack.s3.", time)) %>%
+              spread(key = time, value = snack.s3),
+            by = "patient.id")
+
+Hmisc::label(pts$age.bl) <- "Child age (years)"
+Hmisc::label(pts$race) <- "Child race"
+Hmisc::label(pts$gender) <- "Child gender"
+Hmisc::label(pts$bmi.bl) <- "Child BMI (kg/m$^2$)"
+Hmisc::label(pts$bmi.p.bl) <- "Child BMI percentile"
+Hmisc::label(pts$bmi.p.calc.bl) <- "Child BMI percentile"
+Hmisc::label(pts$bmi.dist.med.bl) <- "Child BMI DFM"
+Hmisc::label(pts$snack.s1.bl) <- "Unhealthy snacks"
+Hmisc::label(pts$snack.s2.bl) <- "Weighted sum of snacks"
+Hmisc::label(pts$snack.s3.bl) <- "Unhealthy + neutral snacks"
+Hmisc::label(pts$parent.bmi.bl) <- "Parent BMI (kg/m$^2$)"
+Hmisc::label(pts$parent.income) <- "Parent income"
+Hmisc::label(pts$parent.education) <- "Parent education"
+Hmisc::label(pts$bmi.p.diff) <- "BMI percentile diff, Y2 - BL"
+
+save(raw, pts, dates,
+     bmi.age, bmi.calc,
+     snacks, snack.scores,
+     file = "bmi2.RData")
+```
+
+```{r}
+tableby(mi.treatment ~
+          age.bl +
+          bmi.p.bl +
+          parent.bmi.bl +
+          gender +
+          race +
+          parent.income,
+        total = FALSE,
+        test = FALSE,
+        data = pts) %>%
+  summary(digits = 1,
+          title = "Checking data against Table 1 of trial publication.")
+```
+
+\pagebreak
+
+```{r}
+tableby(dropped ~
+          age.bl +
+          bmi.p.bl +
+          parent.bmi.bl +
+          gender +
+          race +
+          parent.income +
+          parent.education,
+        total = FALSE,
+        test = FALSE,
+        data =
+          pts %>%
+          mutate(dropped =
+                   factor(dropped,
+                          levels = c(FALSE, TRUE),
+                          labels = c("Completed", "Dropped out")))) %>%
+  summary(digits = 1,
+          title = "Checking data against Table 2 of trial publication.")
+```
+
+\pagebreak
+
+```{r}
+pts %>%
+  count(!is.na(bmi.bl),
+        !is.na(bmi.y1),
+        !is.na(bmi.y2)) %>%
+  arrange(desc(n)) %>%
+  mutate(pct = 100 * n / sum(n)) %>%
+  kable(digits = 1,
+        caption = "Missingness patterns for BMI.")
+
+pts %>%
+  count(!is.na(snack.s1.bl),
+        !is.na(snack.s1.y1),
+        !is.na(snack.s1.y2)) %>%
+  arrange(desc(n)) %>%
+  mutate(pct = 100 * n / sum(n)) %>%
+  kable(digits = 1,
+        caption = "Missingness patterns for snacks.")
+```
+
+\pagebreak
+
+```{r}
+dates %>%
+  filter(!is.na(months.after.bl),
+         months.after.bl >= 0) %>%
+  arrange(pv.base.dov) %>%
+  mutate(patient.id = factor(patient.id, levels = unique(patient.id))) %>%
+  ggplot() +
+  geom_boxplot(aes(x = months.after.bl,
+                   y = event)) +
+  scale_x_continuous(name = "Months after baseline visit",
+                     breaks = seq(0, 60, 6)) +
+  scale_y_discrete(name = "Encounter") +
+  theme(panel.grid.major.y = element_blank())
+```
+
+\pagebreak
+
+```{r}
+fit <-
+  lmer(bmi.p.y2 ~
+         mi.treatment +
+         age.bl +
+         race +
+         gender +
+         bmi.bl +
+         parent.income +
+         parent.bmi.bl +
+         (1 | prac.id),
+       REML = FALSE,
+       data = pts)
+
+fit %>%
+  tidy(effects = "fixed") %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  select(term, estimate, std.error, p.value) %>%
+  kable(digits = 2,
+        caption = "Attempting to reproduce the trial's primary analysis.")
+```
+
+```{r}
+fit.null <-
+  update(fit, ~ . - mi.treatment)
+```
+
+Overall P-value for MI treatment: `r anova(fit.null, fit)[["Pr(>Chisq)"]][2] %>% format_pval()`.
+
+Note that under "Outcome Analysis", it says that "Initial covariates included" were
+
+* Child age
+* Gender
+* Parent BMI
+* Child baseline BMI.
+
+But the results presented in Table 4 additionally adjust for
+
+* Race
+* Household income
+* Provider age.
+
+I couldn't find provider age in the dataset.
+
+\pagebreak
+
+```{r}
+fit <-
+  lmer(bmi.p.y2 ~
+         mi.treatment +
+         age.bl +
+         race +
+         gender +
+         bmi.p.bl +
+         parent.income +
+         parent.bmi.bl +
+         (1 | prac.id),
+       REML = FALSE,
+       data = pts)
+
+fit %>%
+  tidy(effects = "fixed") %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  select(term, estimate, std.error, p.value) %>%
+  kable(digits = 2,
+        caption = "Adjusting for BL BMI percentile instead of BL raw BMI.")
+```
+
+The trial publication says that the primary analysis adjusted for child's baseline BMI. Raw BMI or BMI percentile?
+
+My results match only when using BMI percentile.
+
+\pagebreak
+
+```{r}
+tableby(mi.treatment ~
+          bmi.p.diff,
+        total = FALSE,
+        test = FALSE,
+        data = pts) %>%
+  summary(digits = 1,
+          title = "Unadjusted changes in BMI percentile.")
+```
+
+```{r}
+fit <-
+  lmer(bmi.p.bl - bmi.p.y2 ~
+         mi.treatment +
+         age.bl +
+         race +
+         gender +
+         bmi.bl +
+         parent.income +
+         parent.bmi.bl +
+         (1 | prac.id),
+       REML = FALSE,
+       data = pts)
+
+fit %>%
+  tidy(effects = "fixed") %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  select(term, estimate, std.error, p.value) %>%
+  kable(digits = 2,
+        caption = "Using BMI percentile difference (BL - Y2) as the outcome.")
+```
+
+\pagebreak
+
+```{r fig.cap = "Comparing different BMI z-scores."}
+bmi.calc %>%
+  filter(time %in% "bl") %>%
+  select(bmi.z, bmi.dist.med) %>%
+  pairs()
+```
+
+```{r fig.cap = "Comparing calculated vs. recorded BMI percentiles."}
+bmi.p <-
+  pts %>%
+  select(patient.id, starts_with("bmi.p")) %>%
+  left_join(bmi.calc %>%
+              mutate(time = paste0("bmi.p.calc.", time)) %>%
+              select(patient.id, time, bmi.p) %>%
+              spread(key = time, value = bmi.p),
+            by = "patient.id")
+
+ggplot(pts) +
+  geom_point(aes(x = bmi.p.calc.bl,
+                 y = bmi.p.bl)) +
+  geom_abline(intercept = 0, slope = 1, color = "red") +
+  geom_abline(intercept = c(-0.5, 0.5), color = "red", linetype = "dotted")
+
+ggplot(pts) +
+  geom_point(aes(x = bmi.p.calc.y1,
+                 y = bmi.p.y1)) +
+  geom_abline(intercept = 0, slope = 1, color = "red") +
+  geom_abline(intercept = c(-0.5, 0.5), color = "red", linetype = "dotted")
+
+ggplot(pts) +
+  geom_point(aes(x = bmi.p.calc.y2,
+                 y = bmi.p.y2)) +
+  geom_abline(intercept = 0, slope = 1, color = "red") +
+  geom_abline(intercept = c(-0.5, 0.5), color = "red", linetype = "dotted")
+
+pts %>%
+  select(starts_with("bmi.p")) %>%
+  cor(use = "pairwise.complete.obs") %>%
+  corrplot(method = "number")
+```
+
+\pagebreak
+
+```{r fig.cap = "Comparing different snack scores.", results = "markup"}
+snack.scores %>%
+  filter(time %in% "bl") %>%
+  select(snack.s1, snack.s2, snack.s3) %>%
+  pairs()
+
+pts %>%
+  select(snack.s1.bl, snack.s2.bl, snack.s3.bl,
+         bmi.bl, bmi.p.calc.bl, bmi.dist.med.bl) %>%
+  cor(use = "pairwise.complete.obs") %>%
+  round(2)
+
+pts %>%
+  select(snack.s1.bl, snack.s2.bl, snack.s3.bl,
+         bmi.bl, bmi.p.calc.bl, bmi.dist.med.bl) %>%
+  cor(use = "pairwise.complete.obs") %>%
+  corrplot(method = "number")
+
+pts %>%
+  mutate(snack.s1.change = snack.s1.y2 - snack.s1.bl,
+         snack.s2.change = snack.s2.y2 - snack.s2.bl,
+         snack.s3.change = snack.s3.y2 - snack.s3.bl,
+         bmi.change = bmi.y2 - bmi.bl,
+         bmi.p.calc.change = bmi.p.calc.y2 - bmi.p.calc.bl,
+         bmi.dist.med.change = bmi.dist.med.y2 - bmi.dist.med.bl) %>%
+  select(ends_with(".change")) %>%
+  cor(use = "pairwise.complete.obs") %>%
+  round(2)
+
+pts %>%
+  mutate(snack.s1.change = snack.s1.y2 - snack.s1.bl,
+         snack.s2.change = snack.s2.y2 - snack.s2.bl,
+         snack.s3.change = snack.s3.y2 - snack.s3.bl,
+         bmi.change = bmi.y2 - bmi.bl,
+         bmi.p.calc.change = bmi.p.calc.y2 - bmi.p.calc.bl,
+         bmi.dist.med.change = bmi.dist.med.y2 - bmi.dist.med.bl) %>%
+  select(ends_with(".change")) %>%
+  cor(use = "pairwise.complete.obs") %>%
+  corrplot(method = "number")
+
+pts %>%
+  mutate(snack.s1.change = snack.s1.y1 - snack.s1.bl,
+         snack.s2.change = snack.s2.y1 - snack.s2.bl,
+         snack.s3.change = snack.s3.y1 - snack.s3.bl,
+         bmi.change = bmi.y1 - bmi.bl,
+         bmi.p.calc.change = bmi.p.calc.y1 - bmi.p.calc.bl,
+         bmi.dist.med.change = bmi.dist.med.y1 - bmi.dist.med.bl) %>%
+  select(ends_with(".change")) %>%
+  cor(use = "pairwise.complete.obs") %>%
+  round(2)
+
+pts %>%
+  mutate(snack.s1.change = snack.s1.y1 - snack.s1.bl,
+         snack.s2.change = snack.s2.y1 - snack.s2.bl,
+         snack.s3.change = snack.s3.y1 - snack.s3.bl,
+         bmi.change = bmi.y1 - bmi.bl,
+         bmi.p.calc.change = bmi.p.calc.y1 - bmi.p.calc.bl,
+         bmi.dist.med.change = bmi.dist.med.y1 - bmi.dist.med.bl) %>%
+  select(ends_with(".change")) %>%
+  cor(use = "pairwise.complete.obs") %>%
+  corrplot(method = "number")
+```

@@ -1,0 +1,159 @@
+---
+title: "Association of Socioeconomic Factors and Progression of Kidney Disease: Cox PH Multivariable Analysis"
+author: "Camden Lopez"
+date: "`r Sys.Date()`"
+output: pdf_document
+classoption: landscape
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = TRUE,
+                      warning = TRUE,
+                      results = "asis",
+                      fig.width = 7,
+                      fig.height = 7)
+
+library(knitr)
+
+library(mice)
+library(tidyverse)
+library(survival)
+source("00_helpers.R")
+
+theme_set(theme_light())
+
+load("neptune.mi.RData")
+
+tbl <- NULL
+```
+
+# Pediatric
+
+## Complete remission
+
+## ESRD or eGFR -40%
+
+```{r}
+vars <- c("hosp.visits", "egfr.bl", "upcr.bl")
+form <-
+  sprintf("Surv(bl.to.pr, pr == 'Progression') ~ %s + strata(cohort)",
+          paste(vars, collapse = " + "))
+
+fits <-
+  with(mi.ped.pr,
+       coxph(as.formula(form)))
+
+est <-
+  pool(fits) %>%
+  summary(conf.int = TRUE, exponentiate = TRUE) %>%
+  select(term, estimate, ci.lower = `2.5 %`, ci.upper = `97.5 %`, p.value) %>%
+  mutate(overall = NA)
+
+for (v in vars) {
+  form.null <-
+    sprintf("Surv(bl.to.pr, pr == 'Progression') ~ %s + strata(cohort)",
+            paste(vars %>% setdiff(v), collapse = " + "))
+  fits.null <- with(mi.ped.pr, coxph(as.formula(form.null)))
+  d1 <- suppressWarnings(D1(fits, fits.null)$result)
+  est$overall[min(which(grepl(v, est$term)))] <- d1[1, "P(>F)"]
+}
+
+tbl <-
+  tbl %>%
+  bind_rows(est %>%
+              mutate(pop = "ped",
+                     outcome = "pr"))
+
+est %>%
+  kable(digits = 3, caption = "Pooled estimates from MI.") %>%
+  print()
+```
+
+\pagebreak
+
+# Adult
+
+## Complete remission
+
+```{r}
+vars <- c("race", "er.visits", "ins.status",
+          "income", "educ", "english.prim",
+          "age.bl", "egfr.bl", "imm.supp")
+form <-
+  sprintf("Surv(bl.to.cr, cr == 'Remission') ~ %s + strata(cohort)",
+          paste(vars, collapse = " + "))
+
+fits <-
+  with(mi.adult.cr,
+       coxph(as.formula(form)))
+
+est <-
+  pool(fits) %>%
+  summary(conf.int = TRUE, exponentiate = TRUE) %>%
+  select(term, estimate, ci.lower = `2.5 %`, ci.upper = `97.5 %`, p.value) %>%
+  mutate(overall = NA)
+
+for (v in vars) {
+  form.null <-
+    sprintf("Surv(bl.to.cr, cr == 'Remission') ~ %s + strata(cohort)",
+            paste(vars %>% setdiff(v), collapse = " + "))
+  fits.null <- with(mi.adult.cr, coxph(as.formula(form.null)))
+  d1 <- suppressWarnings(D1(fits, fits.null)$result)
+  est$overall[min(which(grepl(v, est$term)))] <- d1[1, "P(>F)"]
+}
+
+tbl <-
+  tbl %>%
+  bind_rows(est %>%
+              mutate(pop = "adult",
+                     outcome = "cr"))
+
+est %>%
+  kable(digits = 3, caption = "Pooled estimates from MI.") %>%
+  print()
+```
+
+## ESRD or eGFR -40%
+
+```{r}
+vars <- c("race", "hosp.visits", "ins.status",
+          "income", "educ", "egfr.bl",
+          "upcr.bl", "wgt.bl", "htn.bl")
+form <-
+  sprintf("Surv(bl.to.pr, pr == 'Progression') ~ %s + strata(cohort)",
+          paste(vars, collapse = " + "))
+
+fits <-
+  with(mi.adult.pr,
+       coxph(as.formula(form)))
+
+est <-
+  pool(fits) %>%
+  summary(conf.int = TRUE, exponentiate = TRUE) %>%
+  select(term, estimate, ci.lower = `2.5 %`, ci.upper = `97.5 %`, p.value) %>%
+  mutate(overall = NA)
+
+for (v in vars) {
+  form.null <-
+    sprintf("Surv(bl.to.pr, pr == 'Progression') ~ %s + strata(cohort)",
+            paste(vars %>% setdiff(v), collapse = " + "))
+  fits.null <- with(mi.adult.pr, coxph(as.formula(form.null)))
+  d1 <- suppressWarnings(D1(fits, fits.null)$result)
+  est$overall[min(which(grepl(v, est$term)))] <- d1[1, "P(>F)"]
+}
+
+tbl <-
+  tbl %>%
+  bind_rows(est %>%
+              mutate(pop = "adult",
+                     outcome = "pr"))
+
+est %>%
+  kable(digits = 3, caption = "Pooled estimates from MI.") %>%
+  print()
+```
+
+```{r}
+tbl %>% write_csv("coxph-multivar.csv")
+```

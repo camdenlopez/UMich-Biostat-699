@@ -1,0 +1,109 @@
+---
+title: "Mechanical Complications of ECMO: Imputation"
+author: "Camden Lopez"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = FALSE,
+                      warning = FALSE,
+                      results = "asis",
+                      fig.width = 7,
+                      fig.height = 7)
+
+library(arsenal)
+library(knitr)
+library(mice)
+library(tidyverse)
+
+set.seed(136124)
+theme_set(theme_light())
+
+load("ecmo.RData")
+
+mice.m <- 20
+mice.maxit <- 20
+```
+
+# Baseline dataset
+
+```{r}
+mi.bl <- mice(data = runs.bl, maxit = 0)
+mi.bl$predictorMatrix[, c("center.id", "patient.id", "run.id")] <- 0
+mi.bl <-
+  mice(data = runs.bl,
+       m = mice.m,
+       method = mi.bl$method,
+       predictorMatrix = mi.bl$predictorMatrix,
+       maxit = mice.maxit,
+       printFlag = FALSE)
+imp.vars <- names(mi.bl$method)[mi.bl$method != ""]
+paste(imp.vars, collapse = " + ") %>%
+  paste("~ .it | .ms") %>%
+  as.formula() %>%
+  plot(mi.bl, .)
+```
+
+# Hour 6 dataset
+
+```{r}
+mi.hr6 <- mice(data = runs.hr6, maxit = 0)
+mi.hr6$predictorMatrix[, c("center.id", "patient.id", "run.id")] <- 0
+mi.hr6 <-
+  mice(data = runs.hr6,
+       m = mice.m,
+       method = mi.hr6$method,
+       predictorMatrix = mi.hr6$predictorMatrix,
+       maxit = mice.maxit,
+       printFlag = FALSE)
+imp.vars <- names(mi.hr6$method)[mi.hr6$method != ""]
+paste(imp.vars, collapse = " + ") %>%
+  paste("~ .it | .ms") %>%
+  as.formula() %>%
+  plot(mi.hr6, .)
+```
+
+# Hour 30 dataset
+
+```{r}
+mi.hr30 <- mice(data = runs.hr30, maxit = 0)
+mi.hr30$predictorMatrix[, c("center.id", "patient.id", "run.id")] <- 0
+mi.hr30 <-
+  mice(data = runs.hr30,
+       m = mice.m,
+       method = mi.hr30$method,
+       predictorMatrix = mi.hr30$predictorMatrix,
+       maxit = mice.maxit,
+       printFlag = FALSE)
+imp.vars <- names(mi.hr30$method)[mi.hr30$method != ""]
+paste(imp.vars, collapse = " + ") %>%
+  paste("~ .it | .ms") %>%
+  as.formula() %>%
+  plot(mi.hr30, .)
+```
+
+# Hour 7 x 24 dataset
+
+```{r}
+mi.wk1 <- mice(data = runs.wk1, maxit = 0)
+mi.wk1$predictorMatrix[, c("center.id", "patient.id", "run.id")] <- 0
+mi.wk1 <-
+  mice(data = runs.wk1,
+       m = mice.m,
+       method = mi.wk1$method,
+       predictorMatrix = mi.wk1$predictorMatrix,
+       maxit = mice.maxit,
+       printFlag = FALSE)
+imp.vars <- names(mi.wk1$method)[mi.wk1$method != ""]
+paste(imp.vars, collapse = " + ") %>%
+  paste("~ .it | .ms") %>%
+  as.formula() %>%
+  plot(mi.wk1, .)
+```
+
+```{r}
+save(mi.bl, mi.hr6, mi.hr30, mi.wk1,
+     file = "ecmo.mi.RData")
+```

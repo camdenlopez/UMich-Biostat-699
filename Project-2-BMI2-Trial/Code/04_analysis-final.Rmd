@@ -1,0 +1,888 @@
+---
+title: "Secondary Analysis of BMI$^2$ Trial: Final Analysis"
+author: "Camden Lopez"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = TRUE,
+                      warning = TRUE,
+                      fig.width = 7,
+                      fig.height = 7)
+
+library(broom.mixed)
+library(knitr)
+library(lme4)
+library(lmerTest)
+library(mice)
+library(tidyverse)
+source("00_helpers.R")
+
+theme_set(theme_light())
+
+load("bmi2.mi.RData")
+```
+
+# BMI percentile
+
+## Complete cases
+
+### Year 1
+
+```{r}
+fit <-
+  lmer(bmi.p.calc.y1 ~
+         mi.treatment +
+         age.bl +
+         race +
+         gender +
+         bmi.p.calc.bl +
+         parent.income +
+         parent.education +
+         parent.bmi.bl +
+         (1 | prac.id),
+       REML = FALSE,
+       data = mi.pts$data)
+
+fit %>%
+  tidy(conf.int = TRUE, effects = "fixed") %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  kable(digits = 2,
+        caption = "Complete case analysis.")
+```
+
+```{r}
+fit.null <-
+  update(fit, ~ . - mi.treatment)
+```
+
+Overall P-value for MI treatment: `r anova(fit.null, fit)[["Pr(>Chisq)"]][2] %>% format_pval()`.
+
+### Year 2
+
+```{r}
+fit <-
+  lmer(bmi.p.calc.y2 ~
+         mi.treatment +
+         age.bl +
+         race +
+         gender +
+         bmi.p.calc.bl +
+         parent.income +
+         parent.education +
+         parent.bmi.bl +
+         (1 | prac.id),
+       REML = FALSE,
+       data = mi.pts$data)
+
+fit %>%
+  tidy(conf.int = TRUE, effects = "fixed") %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  kable(digits = 2,
+        caption = "Complete case analysis.")
+```
+
+```{r}
+fit.null <-
+  update(fit, ~ . - mi.treatment)
+```
+
+Overall P-value for MI treatment: `r anova(fit.null, fit)[["Pr(>Chisq)"]][2] %>% format_pval()`.
+
+## MI + LME
+
+### Year 1
+
+```{r}
+fits <-
+  with(mi.long,
+       lmer(bmi.p.calc.change ~
+              mi.treatment +
+              y2 +
+              y2:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              bmi.p.calc.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits.null <-
+  with(mi.long,
+       lmer(bmi.p.calc.change ~
+              y2 +
+              y2:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              bmi.p.calc.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits %>%
+  pool() %>%
+  summary(conf.int = TRUE) %>%
+  select(term, estimate, `2.5 %`, `97.5 %`, p.value) %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  kable(digits = 2)
+
+summary(D3(fits, fits.null))
+```
+
+### Year 2
+
+```{r}
+fits <-
+  with(mi.long,
+       lmer(bmi.p.calc.change ~
+              mi.treatment +
+              y1 +
+              y1:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              bmi.p.calc.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits.null <-
+  with(mi.long,
+       lmer(bmi.p.calc.change ~
+              y1 +
+              y1:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              bmi.p.calc.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits %>%
+  pool() %>%
+  summary(conf.int = TRUE) %>%
+  select(term, estimate, `2.5 %`, `97.5 %`, p.value) %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  kable(digits = 2)
+
+summary(D3(fits, fits.null))
+```
+
+\pagebreak
+
+# BMI distance from the median
+
+## Complete cases
+
+### Year 1
+
+```{r}
+fit <-
+  lmer(bmi.dist.med.y1 ~
+         mi.treatment +
+         age.bl +
+         race +
+         gender +
+         bmi.dist.med.bl +
+         parent.income +
+         parent.education +
+         parent.bmi.bl +
+         (1 | prac.id),
+       REML = FALSE,
+       data = mi.pts$data)
+
+fit %>%
+  tidy(conf.int = TRUE, effects = "fixed") %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  kable(digits = 2)
+```
+
+```{r}
+fit.null <-
+  update(fit, ~ . - mi.treatment)
+```
+
+Overall P-value for MI treatment: `r anova(fit.null, fit)[["Pr(>Chisq)"]][2] %>% format_pval()`.
+
+### Year 2
+
+```{r}
+fit <-
+  lmer(bmi.dist.med.y2 ~
+         mi.treatment +
+         age.bl +
+         race +
+         gender +
+         bmi.dist.med.bl +
+         parent.income +
+         parent.education +
+         parent.bmi.bl +
+         (1 | prac.id),
+       REML = FALSE,
+       data = mi.pts$data)
+
+fit %>%
+  tidy(conf.int = TRUE, effects = "fixed") %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  kable(digits = 2)
+```
+
+```{r}
+fit.null <-
+  update(fit, ~ . - mi.treatment)
+```
+
+Overall P-value for MI treatment: `r anova(fit.null, fit)[["Pr(>Chisq)"]][2] %>% format_pval()`.
+
+## MI + LME
+
+### Year 1
+
+```{r}
+fits <-
+  with(mi.long,
+       lmer(bmi.dist.med.change ~
+              mi.treatment +
+              y2 +
+              y2:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              bmi.dist.med.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits.null <-
+  with(mi.long,
+       lmer(bmi.dist.med.change ~
+              y2 +
+              y2:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              bmi.dist.med.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits %>%
+  pool() %>%
+  summary(conf.int = TRUE) %>%
+  select(term, estimate, `2.5 %`, `97.5 %`, p.value) %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  kable(digits = 2)
+
+summary(D3(fits, fits.null))
+```
+
+### Year 2
+
+```{r}
+fits <-
+  with(mi.long,
+       lmer(bmi.dist.med.change ~
+              mi.treatment +
+              y1 +
+              y1:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              bmi.dist.med.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits.null <-
+  with(mi.long,
+       lmer(bmi.dist.med.change ~
+              y1 +
+              y1:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              bmi.dist.med.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits %>%
+  pool() %>%
+  summary(conf.int = TRUE) %>%
+  select(term, estimate, `2.5 %`, `97.5 %`, p.value) %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  kable(digits = 2)
+
+summary(D3(fits, fits.null))
+```
+
+\pagebreak
+
+# Snack score 1
+
+## Complete cases
+
+LME model resulted in estimate of zero variance for random practice effect (with a "singular model fit" warning), so I fit the model with a LM instead. The estimates are essentially identical.
+
+### Year 1
+
+```{r}
+fit <-
+  lm(snack.s1.y1 ~
+       mi.treatment +
+       age.bl +
+       race +
+       gender +
+       snack.s1.bl +
+       parent.income +
+       parent.education +
+       parent.bmi.bl,
+     data = mi.pts$data)
+
+# fit <-
+#   lmer(snack.s1.y2 ~
+#          mi.treatment +
+#          age.bl +
+#          race +
+#          gender +
+#          snack.s1.bl +
+#          parent.income +
+#          parent.bmi.bl +
+#          (1 | prac.id),
+#        REML = FALSE,
+#        data = mi.pts$data)
+
+fit %>%
+  tidy(conf.int = TRUE) %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  kable(digits = 2)
+```
+
+```{r}
+fit.null <-
+  update(fit, ~ . - mi.treatment)
+```
+
+Overall P-value for MI treatment: `r anova(fit.null, fit)[["Pr(>F)"]][2] %>% format_pval()`.
+
+### Year 2
+
+```{r}
+fit <-
+  lm(snack.s1.y2 ~
+       mi.treatment +
+       age.bl +
+       race +
+       gender +
+       snack.s1.bl +
+       parent.income +
+       parent.education +
+       parent.bmi.bl,
+     data = mi.pts$data)
+
+# fit <-
+#   lmer(snack.s1.y2 ~
+#          mi.treatment +
+#          age.bl +
+#          race +
+#          gender +
+#          snack.s1.bl +
+#          parent.income +
+#          parent.bmi.bl +
+#          (1 | prac.id),
+#        REML = FALSE,
+#        data = mi.pts$data)
+
+fit %>%
+  tidy(conf.int = TRUE) %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  kable(digits = 2)
+```
+
+```{r}
+fit.null <-
+  update(fit, ~ . - mi.treatment)
+```
+
+Overall P-value for MI treatment: `r anova(fit.null, fit)[["Pr(>F)"]][2] %>% format_pval()`.
+
+## MI + LME
+
+### Year 1
+
+```{r}
+fits <-
+  with(mi.long,
+       lmer(snack.s1.change ~
+              mi.treatment +
+              y2 +
+              y2:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              snack.s1.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits.null <-
+  with(mi.long,
+       lmer(snack.s1.change ~
+              y2 +
+              y2:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              snack.s1.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits %>%
+  pool() %>%
+  summary(conf.int = TRUE) %>%
+  select(term, estimate, `2.5 %`, `97.5 %`, p.value) %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  kable(digits = 2)
+
+summary(D3(fits, fits.null))
+```
+
+### Year 2
+
+```{r}
+fits <-
+  with(mi.long,
+       lmer(snack.s1.change ~
+              mi.treatment +
+              y1 +
+              y1:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              snack.s1.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits.null <-
+  with(mi.long,
+       lmer(snack.s1.change ~
+              y1 +
+              y1:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              snack.s1.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits %>%
+  pool() %>%
+  summary(conf.int = TRUE) %>%
+  select(term, estimate, `2.5 %`, `97.5 %`, p.value) %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  kable(digits = 2)
+
+summary(D3(fits, fits.null))
+```
+
+\pagebreak
+
+# Snack score 2
+
+## Complete cases
+
+LME model resulted in estimate of zero variance for random practice effect (with a "singular model fit" warning), so I fit the model with a LM instead. The estimates are essentially identical.
+
+### Year 1
+
+```{r}
+fit <-
+  lm(snack.s2.y1 ~
+       mi.treatment +
+       age.bl +
+       race +
+       gender +
+       snack.s2.bl +
+       parent.income +
+       parent.education +
+       parent.bmi.bl,
+     data = mi.pts$data)
+
+# fit <-
+#   lmer(snack.s2.y2 ~
+#          mi.treatment +
+#          age.bl +
+#          race +
+#          gender +
+#          snack.s2.bl +
+#          parent.income +
+#          parent.bmi.bl +
+#          (1 | prac.id),
+#        REML = FALSE,
+#        data = mi.pts$data)
+
+fit %>%
+  tidy(conf.int = TRUE) %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  kable(digits = 2)
+```
+
+```{r}
+fit.null <-
+  update(fit, ~ . - mi.treatment)
+```
+
+Overall P-value for MI treatment: `r anova(fit.null, fit)[["Pr(>F)"]][2] %>% format_pval()`.
+
+### Year 2
+
+```{r}
+fit <-
+  lm(snack.s2.y2 ~
+       mi.treatment +
+       age.bl +
+       race +
+       gender +
+       snack.s2.bl +
+       parent.income +
+       parent.education +
+       parent.bmi.bl,
+     data = mi.pts$data)
+
+# fit <-
+#   lmer(snack.s2.y2 ~
+#          mi.treatment +
+#          age.bl +
+#          race +
+#          gender +
+#          snack.s2.bl +
+#          parent.income +
+#          parent.bmi.bl +
+#          (1 | prac.id),
+#        REML = FALSE,
+#        data = mi.pts$data)
+
+fit %>%
+  tidy(conf.int = TRUE) %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  kable(digits = 2)
+```
+
+```{r}
+fit.null <-
+  update(fit, ~ . - mi.treatment)
+```
+
+Overall P-value for MI treatment: `r anova(fit.null, fit)[["Pr(>F)"]][2] %>% format_pval()`.
+
+## MI + LME
+
+### Year 1
+
+```{r}
+fits <-
+  with(mi.long,
+       lmer(snack.s2.change ~
+              mi.treatment +
+              y2 +
+              y2:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              snack.s2.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits.null <-
+  with(mi.long,
+       lmer(snack.s2.change ~
+              y2 +
+              y2:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              snack.s2.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits %>%
+  pool() %>%
+  summary(conf.int = TRUE) %>%
+  select(term, estimate, `2.5 %`, `97.5 %`, p.value) %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  kable(digits = 2)
+
+summary(D3(fits, fits.null))
+```
+
+### Year 2
+
+```{r}
+fits <-
+  with(mi.long,
+       lmer(snack.s2.change ~
+              mi.treatment +
+              y1 +
+              y1:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              snack.s2.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits.null <-
+  with(mi.long,
+       lmer(snack.s2.change ~
+              y1 +
+              y1:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              snack.s2.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits %>%
+  pool() %>%
+  summary(conf.int = TRUE) %>%
+  select(term, estimate, `2.5 %`, `97.5 %`, p.value) %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  kable(digits = 2)
+
+summary(D3(fits, fits.null))
+```
+
+\pagebreak
+
+# Snack score 3
+
+## Complete cases
+
+LME model resulted in estimate of zero variance for random practice effect (with a "singular model fit" warning), so I fit the model with a LM instead. The estimates are essentially identical.
+
+### Year 1
+
+```{r}
+fit <-
+  lm(snack.s3.y1 ~
+       mi.treatment +
+       age.bl +
+       race +
+       gender +
+       snack.s3.bl +
+       parent.income +
+       parent.education +
+       parent.bmi.bl,
+     data = mi.pts$data)
+
+# fit <-
+#   lmer(snack.s3.y2 ~
+#          mi.treatment +
+#          age.bl +
+#          race +
+#          gender +
+#          snack.s3.bl +
+#          parent.income +
+#          parent.bmi.bl +
+#          (1 | prac.id),
+#        REML = FALSE,
+#        data = mi.pts$data)
+
+fit %>%
+  tidy(conf.int = TRUE) %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  kable(digits = 2)
+```
+
+```{r}
+fit.null <-
+  update(fit, ~ . - mi.treatment)
+```
+
+Overall P-value for MI treatment: `r anova(fit.null, fit)[["Pr(>F)"]][2] %>% format_pval()`.
+
+### Year 2
+
+```{r}
+fit <-
+  lm(snack.s3.y2 ~
+       mi.treatment +
+       age.bl +
+       race +
+       gender +
+       snack.s3.bl +
+       parent.income +
+       parent.education +
+       parent.bmi.bl,
+     data = mi.pts$data)
+
+# fit <-
+#   lmer(snack.s3.y2 ~
+#          mi.treatment +
+#          age.bl +
+#          race +
+#          gender +
+#          snack.s3.bl +
+#          parent.income +
+#          parent.bmi.bl +
+#          (1 | prac.id),
+#        REML = FALSE,
+#        data = mi.pts$data)
+
+fit %>%
+  tidy(conf.int = TRUE) %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  select(term, estimate, conf.low, conf.high, p.value) %>%
+  kable(digits = 2)
+```
+
+```{r}
+fit.null <-
+  update(fit, ~ . - mi.treatment)
+```
+
+Overall P-value for MI treatment: `r anova(fit.null, fit)[["Pr(>F)"]][2] %>% format_pval()`.
+
+## MI + LME
+
+### Year 1
+
+```{r}
+fits <-
+  with(mi.long,
+       lmer(snack.s3.change ~
+              mi.treatment +
+              y2 +
+              y2:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              snack.s3.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits.null <-
+  with(mi.long,
+       lmer(snack.s3.change ~
+              y2 +
+              y2:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              snack.s3.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits %>%
+  pool() %>%
+  summary(conf.int = TRUE) %>%
+  select(term, estimate, `2.5 %`, `97.5 %`, p.value) %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  kable(digits = 2)
+
+summary(D3(fits, fits.null))
+```
+
+### Year 2
+
+```{r}
+fits <-
+  with(mi.long,
+       lmer(snack.s3.change ~
+              mi.treatment +
+              y1 +
+              y1:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              snack.s3.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits.null <-
+  with(mi.long,
+       lmer(snack.s3.change ~
+              y1 +
+              y1:mi.treatment +
+              age.bl +
+              race +
+              gender +
+              snack.s3.bl +
+              parent.income +
+              parent.education +
+              parent.bmi.bl +
+              (1 | prac.id),
+            REML = FALSE))
+
+fits %>%
+  pool() %>%
+  summary(conf.int = TRUE) %>%
+  select(term, estimate, `2.5 %`, `97.5 %`, p.value) %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  kable(digits = 2)
+
+summary(D3(fits, fits.null))
+```

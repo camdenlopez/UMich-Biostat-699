@@ -1,0 +1,753 @@
+---
+title: "Mechanical Complications of ECMO: Data Prep"
+author: "Camden Lopez"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = FALSE,
+                      results = "asis",
+                      fig.width = 7,
+                      fig.height = 7)
+
+library(arsenal)
+library(corrplot)
+library(janitor)
+library(knitr)
+library(readxl)
+library(tidyverse)
+
+theme_set(theme_light())
+```
+
+```{r}
+runs.raw <-
+  read_xlsx("../Data/Mechanical Complications.xlsx",
+            sheet = "Mech Comp Study",
+            na = "NULL") %>%
+  clean_names(sep_out = ".") %>%
+  mutate(hours.ecmo = as.numeric(hours.ecmo))
+
+diagnoses <-
+  read_xlsx("../Data/Mechanical Complications.xlsx",
+            sheet = "Diagnoses",
+            na = "NULL") %>%
+  clean_names(sep_out = ".")
+
+complications <-
+  read_xlsx("../Data/Mechanical Complications.xlsx",
+            sheet = "Complications",
+            na = "NULL") %>%
+  clean_names(sep_out = ".")
+
+support <-
+  read_xlsx("../Data/Mechanical Complications.xlsx",
+            sheet = "Pre-ECLS Support",
+            na = "NULL") %>%
+  clean_names(sep_out = ".")
+
+vasoactive.ids <-
+  c(601:605, 607:608, 703:709, 712:713)
+```
+
+```{r}
+runs <-
+  runs.raw %>%
+  left_join(diagnoses %>%
+              filter(grepl("^A40", icd10code) |
+                       grepl("^A41", icd10code) |
+                       grepl("^R65\\.2[01]", icd10code)) %>%
+              distinct(run.id) %>%
+              mutate(sepsis = TRUE),
+            by = "run.id") %>%
+  left_join(diagnoses %>%
+              filter(primary.diagnosis == 1,
+                     grepl("^A40", icd10code) |
+                       grepl("^A41", icd10code) |
+                       grepl("^R65\\.2[01]", icd10code)) %>%
+              distinct(run.id) %>%
+              mutate(primary.sepsis = TRUE),
+            by = "run.id") %>%
+  left_join(support %>%
+              filter(support.code.id %in% vasoactive.ids) %>%
+              distinct(run.id) %>%
+              mutate(vasoact.med = TRUE),
+            by = "run.id") %>%
+  replace_na(list(sepsis = FALSE,
+                  primary.sepsis = FALSE,
+                  vasoact.med = FALSE)) %>%
+  mutate(sex = ifelse(sex %in% "Unknown", NA_character_, sex),
+         age.years =
+           ifelse(age.years %in% "80 or over",
+                  81, age.years) %>%
+           as.numeric(),
+         weight = case_when(weight < 25 ~ NA_real_, TRUE ~ weight),
+         sbp = case_when(dbp > sbp ~ NA_real_, TRUE ~ sbp),
+         dbp = case_when(dbp > sbp ~ NA_real_, TRUE ~ dbp),
+         sbp24 = case_when(dbp24 > sbp24 ~ NA_real_, TRUE ~ sbp24),
+         dbp24 = case_when(dbp24 > sbp24 ~ NA_real_, TRUE ~ dbp24),
+         sepsis.primary.or.with.vasoact = sepsis & (vasoact.med | primary.sepsis),
+         pre.ecls.arrest =
+           ifelse(pre.ecls.arrest %in% "Unknown",
+                  NA_character_, pre.ecls.arrest),
+         p.h = case_when(p.h >= 7.95 | p.h <= 6 ~ NA_real_, TRUE ~ p.h),
+         p.h24 = case_when(p.h24 >= 7.95 | p.h24 <= 6 ~ NA_real_, TRUE ~ p.h24),
+         pco2 = case_when(pco2 < 10 | pco2 >= 220 ~ NA_real_, TRUE ~ pco2),
+         pco224 = case_when(pco224 < 10 | pco224 >= 150 ~ NA_real_, TRUE ~ pco224),
+         po2 = case_when(po2 <= 0 | po2 >= 760 ~ NA_real_, TRUE ~ po2),
+         po224 = case_when(po224 <= 0 | po224 >= 760 ~ NA_real_, TRUE ~ po224),
+         fi.o2 = case_when(fi.o2 <= 20 | fi.o2 > 100 ~ NA_real_, TRUE ~ fi.o2),
+         fio224 = case_when(fio224 <= 20 | fio224 > 100 ~ NA_real_, TRUE ~ fio224),
+         pf.ratio = po2 / (fi.o2 / 100),
+         pf.ratio.24 = po224 / (fio224 / 100),
+         lactate.pre.ecls =
+           case_when(lactate.pre.ecls < 0 | lactate.pre.ecls >= 40 ~ NA_real_,
+                     TRUE ~ lactate.pre.ecls),
+         lactate.ecls =
+           case_when(lactate.ecls < 0 | lactate.ecls >= 40 ~ NA_real_,
+                     TRUE ~ lactate.ecls),
+         vent.hr =
+           case_when(intubation.selected %in% "No" ~ 0,
+                     !is.na(intubation.to.time.on.hours) &
+                       intubation.to.time.on.hours < 0 ~ 0,
+                     intubation.selected %in% "Pre-Existing tracheostomy" ~
+                       NA_real_,
+                     TRUE ~
+                       intubation.to.time.on.hours),
+         pre.existing.tracheostomy =
+           intubation.selected %in% "Pre-Existing tracheostomy",
+         hours.ecmo = case_when(hours.ecmo <= 0 ~ NA_real_, TRUE ~ hours.ecmo),
+         ecmo.hr.cat =
+           cut(hours.ecmo,
+               breaks = c(-Inf, 4, 24, Inf),
+               right = FALSE,
+               labels = c("<4 hours", "4-<24 hours", ">=24 hours"))) %>%
+  left_join(complications %>%
+              filter(code %in% 104,
+                     complication.time.on.hours > 0) %>%
+              group_by(run.id) %>%
+              summarize(pump.fail.n = n(),
+                        pump.fail.n.after.6hr =
+                          sum(complication.time.on.hours > 6),
+                        pump.fail.n.after.30hr =
+                          sum(complication.time.on.hours > 30),
+                        pump.fail.hr = min(complication.time.on.hours),
+                        pump.fail.event = TRUE,
+                        pump.fail.hr.after.6hr =
+                          ifelse(any(complication.time.on.hours > 6),
+                                 min(complication.time.on.hours[complication.time.on.hours > 6]),
+                                 NA_real_),
+                        pump.fail.event.after.6hr =
+                          any(complication.time.on.hours > 6),
+                        pump.fail.hr.after.30hr =
+                          ifelse(any(complication.time.on.hours > 30),
+                                 min(complication.time.on.hours[complication.time.on.hours > 30]),
+                                 NA_real_),
+                        pump.fail.event.after.30hr =
+                          any(complication.time.on.hours > 30),
+                        pump.fail.hr.after.1wk =
+                          ifelse(any(complication.time.on.hours > 7 * 24),
+                                 min(complication.time.on.hours[complication.time.on.hours > 7 * 24]),
+                                 NA_real_),
+                        pump.fail.event.after.1wk =
+                          any(complication.time.on.hours > 7 * 24),
+                        .groups = "drop"),
+            by = "run.id") %>%
+  replace_na(list(pump.fail.n = 0,
+                  pump.fail.n.after.6hr = 0,
+                  pump.fail.n.after.30hr = 0,
+                  pump.fail.event = FALSE,
+                  pump.fail.event.after.6hr = FALSE,
+                  pump.fail.event.after.30hr = FALSE,
+                  pump.fail.event.after.1wk = FALSE)) %>%
+  mutate(pump.fail.hr =
+           ifelse(pump.fail.event,
+                  pump.fail.hr,
+                  hours.ecmo),
+         pump.fail.hr.after.6hr =
+           ifelse(pump.fail.event.after.6hr,
+                  pump.fail.hr.after.6hr,
+                  hours.ecmo),
+         pump.fail.hr.after.30hr =
+           ifelse(pump.fail.event.after.30hr,
+                  pump.fail.hr.after.30hr,
+                  hours.ecmo),
+         pump.fail.hr.after.1wk =
+           ifelse(pump.fail.event.after.1wk,
+                  pump.fail.hr.after.1wk,
+                  hours.ecmo),
+         pump.fail.error =
+           run.id %in% {
+             complications %>%
+               filter(code %in% 104,
+                      is.na(complication.time.on.hours) |
+                        complication.time.on.hours <= 0) %>%
+               pull(run.id)
+           }) %>%
+  left_join(complications %>%
+              filter(code %in% 101,
+                     complication.time.on.hours > 0) %>%
+              group_by(run.id) %>%
+              summarize(oxy.fail.n = n(),
+                        oxy.fail.n.after.6hr =
+                          sum(complication.time.on.hours > 6),
+                        oxy.fail.n.after.30hr =
+                          sum(complication.time.on.hours > 30),
+                        oxy.fail.hr = min(complication.time.on.hours),
+                        oxy.fail.event = TRUE,
+                        oxy.fail.hr.after.6hr =
+                          ifelse(any(complication.time.on.hours > 6),
+                                 min(complication.time.on.hours[complication.time.on.hours > 6]),
+                                 NA_real_),
+                        oxy.fail.event.after.6hr =
+                          any(complication.time.on.hours > 6),
+                        oxy.fail.hr.after.30hr =
+                          ifelse(any(complication.time.on.hours > 30),
+                                 min(complication.time.on.hours[complication.time.on.hours > 30]),
+                                 NA_real_),
+                        oxy.fail.event.after.30hr =
+                          any(complication.time.on.hours > 30),
+                        oxy.fail.hr.after.1wk =
+                          ifelse(any(complication.time.on.hours > 7 * 24),
+                                 min(complication.time.on.hours[complication.time.on.hours > 7 * 24]),
+                                 NA_real_),
+                        oxy.fail.event.after.1wk =
+                          any(complication.time.on.hours > 7 * 24),
+                        .groups = "drop"),
+            by = "run.id") %>%
+  replace_na(list(oxy.fail.n = 0,
+                  oxy.fail.n.after.6hr = 0,
+                  oxy.fail.n.after.30hr = 0,
+                  oxy.fail.event = FALSE,
+                  oxy.fail.event.after.6hr = FALSE,
+                  oxy.fail.event.after.30hr = FALSE,
+                  oxy.fail.event.after.1wk = FALSE)) %>%
+  mutate(oxy.fail.hr =
+           ifelse(oxy.fail.event,
+                  oxy.fail.hr,
+                  hours.ecmo),
+         oxy.fail.hr.after.6hr =
+           ifelse(oxy.fail.event.after.6hr,
+                  oxy.fail.hr.after.6hr,
+                  hours.ecmo),
+         oxy.fail.hr.after.30hr =
+           ifelse(oxy.fail.event.after.30hr,
+                  oxy.fail.hr.after.30hr,
+                  hours.ecmo),
+         oxy.fail.hr.after.1wk =
+           ifelse(oxy.fail.event.after.1wk,
+                  oxy.fail.hr.after.1wk,
+                  hours.ecmo),
+         oxy.fail.error =
+           run.id %in% {
+             complications %>%
+               filter(code %in% 101,
+                      is.na(complication.time.on.hours) |
+                        complication.time.on.hours <= 0) %>%
+               pull(run.id)
+           }) %>%
+  left_join(complications %>%
+              filter(code %in% 134,
+                     complication.time.on.hours > 0) %>%
+              group_by(run.id) %>%
+              summarize(circuit.clot.n = n(),
+                        circuit.clot.n.after.6hr =
+                          sum(complication.time.on.hours > 6),
+                        circuit.clot.n.after.30hr =
+                          sum(complication.time.on.hours > 30),
+                        circuit.clot.hr = min(complication.time.on.hours),
+                        circuit.clot.event = TRUE,
+                        circuit.clot.hr.after.6hr =
+                          ifelse(any(complication.time.on.hours > 6),
+                                 min(complication.time.on.hours[complication.time.on.hours > 6]),
+                                 NA_real_),
+                        circuit.clot.event.after.6hr =
+                          any(complication.time.on.hours > 6),
+                        circuit.clot.hr.after.30hr =
+                          ifelse(any(complication.time.on.hours > 30),
+                                 min(complication.time.on.hours[complication.time.on.hours > 30]),
+                                 NA_real_),
+                        circuit.clot.event.after.30hr =
+                          any(complication.time.on.hours > 30),
+                        circuit.clot.hr.after.1wk =
+                          ifelse(any(complication.time.on.hours > 7 * 24),
+                                 min(complication.time.on.hours[complication.time.on.hours > 7 * 24]),
+                                 NA_real_),
+                        circuit.clot.event.after.1wk =
+                          any(complication.time.on.hours > 7 * 24),
+                        .groups = "drop"),
+            by = "run.id") %>%
+  replace_na(list(circuit.clot.n = 0,
+                  circuit.clot.n.after.6hr = 0,
+                  circuit.clot.n.after.30hr = 0,
+                  circuit.clot.event = FALSE,
+                  circuit.clot.event.after.6hr = FALSE,
+                  circuit.clot.event.after.30hr = FALSE,
+                  circuit.clot.event.after.1wk = FALSE)) %>%
+  mutate(circuit.clot.hr =
+           ifelse(circuit.clot.event,
+                  circuit.clot.hr,
+                  hours.ecmo),
+         circuit.clot.hr.after.6hr =
+           ifelse(circuit.clot.event.after.6hr,
+                  circuit.clot.hr.after.6hr,
+                  hours.ecmo),
+         circuit.clot.hr.after.30hr =
+           ifelse(circuit.clot.event.after.30hr,
+                  circuit.clot.hr.after.30hr,
+                  hours.ecmo),
+         circuit.clot.hr.after.1wk =
+           ifelse(circuit.clot.event.after.1wk,
+                  circuit.clot.hr.after.1wk,
+                  hours.ecmo),
+         circuit.clot.error =
+           run.id %in% {
+             complications %>%
+               filter(code %in% 134,
+                      is.na(complication.time.on.hours) |
+                        complication.time.on.hours <= 0) %>%
+               pull(run.id)
+           }) %>%
+  left_join(complications %>%
+              filter(code %in% c(104, 101, 134),
+                     complication.time.on.hours > 0) %>%
+              group_by(run.id) %>%
+              summarize(mech.compl.n = n(),
+                        mech.compl.n.after.6hr =
+                          sum(complication.time.on.hours > 6),
+                        mech.compl.n.after.30hr =
+                          sum(complication.time.on.hours > 30),
+                        mech.compl.hr = min(complication.time.on.hours),
+                        mech.compl.event = TRUE,
+                        mech.compl.hr.after.6hr =
+                          ifelse(any(complication.time.on.hours > 6),
+                                 min(complication.time.on.hours[complication.time.on.hours > 6]),
+                                 NA_real_),
+                        mech.compl.event.after.6hr =
+                          any(complication.time.on.hours > 6),
+                        mech.compl.hr.after.30hr =
+                          ifelse(any(complication.time.on.hours > 30),
+                                 min(complication.time.on.hours[complication.time.on.hours > 30]),
+                                 NA_real_),
+                        mech.compl.event.after.30hr =
+                          any(complication.time.on.hours > 30),
+                        .groups = "drop"),
+            by = "run.id") %>%
+  replace_na(list(mech.compl.n = 0,
+                  mech.compl.n.after.6hr = 0,
+                  mech.compl.n.after.30hr = 0,
+                  mech.compl.event = FALSE,
+                  mech.compl.event.after.6hr = FALSE,
+                  mech.compl.event.after.30hr = FALSE)) %>%
+  mutate(mech.compl.hr =
+           ifelse(mech.compl.event,
+                  mech.compl.hr,
+                  hours.ecmo),
+         mech.compl.hr.after.6hr =
+           ifelse(mech.compl.event.after.6hr,
+                  mech.compl.hr.after.6hr,
+                  hours.ecmo),
+         mech.compl.hr.after.30hr =
+           ifelse(mech.compl.event.after.30hr,
+                  mech.compl.hr.after.30hr,
+                  hours.ecmo),
+         mech.compl.error =
+           run.id %in% {
+             complications %>%
+               filter(code %in% c(104, 101, 134),
+                      is.na(complication.time.on.hours) |
+                        complication.time.on.hours <= 0) %>%
+               pull(run.id)
+           }) %>%
+  mutate(age..10yr = age.years / 10,
+         weight..20kg = weight / 20,
+         sbp..20mmhg = sbp / 20,
+         sbp.24..20mmhg = sbp24 / 20,
+         dbp..10mmhg = dbp / 10,
+         dbp.24..10mmhg = dbp24 / 10,
+         vent..log2 = log2(vent.hr + 1),
+         ph..0.1 = (p.h - 7) / 0.1,
+         ph.24..0.1 = (p.h24 - 7) / 0.1,
+         pco2..20mmhg = pco2 / 20,
+         pco2.24..20mmhg = pco224 / 20,
+         pf.ratio..log2 = log2(pf.ratio),
+         pf.ratio.24..log2 = log2(pf.ratio.24),
+         lactate..log2 = log2(lactate.pre.ecls + 0.1),
+         lactate.24..log2 = log2(lactate.ecls + 0.1),
+         ecmo.1000hr = hours.ecmo / 1000) %>%
+  select(center.id = center.analysis.id,
+         patient.id,
+         run.id,
+         run.no,
+         year.ecls,
+         # Un-transformed versions of
+         # transformed variables
+         age.yr = age.years,
+         weight.kg = weight,
+         sbp,
+         sbp.24 = sbp24,
+         dbp,
+         dbp.24 = dbp24,
+         sepsis,
+         vent.hr,
+         pre.existing.tracheostomy,
+         ph = p.h,
+         ph.24 = p.h24,
+         pco2,
+         pco2.24 = pco224,
+         pf.ratio,
+         pf.ratio.24,
+         lactate = lactate.pre.ecls,
+         lactate.24 = lactate.ecls,
+         ecmo.hr = hours.ecmo,
+         ecmo.hr.cat,
+         # All analysis variables
+         sex,
+         age..10yr,
+         weight..20kg,
+         sbp..20mmhg,
+         sbp.24..20mmhg,
+         dbp..10mmhg,
+         dbp.24..10mmhg,
+         primary.sepsis,
+         vasoact.med,
+         sepsis.primary.or.with.vasoact,
+         cardiac.arrest = pre.ecls.arrest,
+         vent..log2,
+         ph..0.1,
+         ph.24..0.1,
+         pco2..20mmhg,
+         pco2.24..20mmhg,
+         pf.ratio..log2,
+         pf.ratio.24..log2,
+         lactate..log2,
+         lactate.24..log2,
+         pump.flow.4 = pump.flow4,
+         pump.flow.24 = pump.flow24,
+         ecmo.1000hr,
+         pump.fail.error,
+         pump.fail.n,
+         pump.fail.hr,
+         pump.fail.event,
+         pump.fail.n.after.6hr,
+         pump.fail.hr.after.6hr,
+         pump.fail.event.after.6hr,
+         pump.fail.n.after.30hr,
+         pump.fail.hr.after.30hr,
+         pump.fail.event.after.30hr,
+         pump.fail.hr.after.1wk,
+         pump.fail.event.after.1wk,
+         oxy.fail.error,
+         oxy.fail.n,
+         oxy.fail.hr,
+         oxy.fail.event,
+         oxy.fail.n.after.6hr,
+         oxy.fail.hr.after.6hr,
+         oxy.fail.event.after.6hr,
+         oxy.fail.n.after.30hr,
+         oxy.fail.hr.after.30hr,
+         oxy.fail.event.after.30hr,
+         oxy.fail.hr.after.1wk,
+         oxy.fail.event.after.1wk,
+         circuit.clot.error,
+         circuit.clot.n,
+         circuit.clot.hr,
+         circuit.clot.event,
+         circuit.clot.n.after.6hr,
+         circuit.clot.hr.after.6hr,
+         circuit.clot.event.after.6hr,
+         circuit.clot.n.after.30hr,
+         circuit.clot.hr.after.30hr,
+         circuit.clot.event.after.30hr,
+         circuit.clot.hr.after.1wk,
+         circuit.clot.event.after.1wk,
+         mech.compl.error,
+         mech.compl.n,
+         mech.compl.hr,
+         mech.compl.event,
+         mech.compl.n.after.6hr,
+         mech.compl.hr.after.6hr,
+         mech.compl.event.after.6hr,
+         mech.compl.n.after.30hr,
+         mech.compl.hr.after.30hr,
+         mech.compl.event.after.30hr)
+```
+
+```{r}
+runs.bl <-
+  runs %>%
+  filter(!mech.compl.error,
+         !is.na(ecmo.hr)) %>%
+  arrange(patient.id, run.no) %>%
+  distinct(patient.id, .keep_all = TRUE) %>%
+  select(center.id,
+         patient.id,
+         run.id,
+         ecmo.1000hr,
+         pre.existing.tracheostomy,
+         sex,
+         age..10yr,
+         weight..20kg,
+         sbp..20mmhg,
+         dbp..10mmhg,
+         cardiac.arrest,
+         primary.sepsis,
+         vasoact.med,
+         sepsis.primary.or.with.vasoact,
+         vent..log2,
+         ph..0.1,
+         pco2..20mmhg,
+         pf.ratio..log2,
+         lactate..log2,
+         pump.fail.n,
+         pump.fail.hr,
+         pump.fail.event,
+         oxy.fail.n,
+         oxy.fail.hr,
+         oxy.fail.event,
+         circuit.clot.n,
+         circuit.clot.hr,
+         circuit.clot.event,
+         mech.compl.n,
+         mech.compl.hr,
+         mech.compl.event)
+
+runs.hr6 <-
+  runs %>%
+  filter(!mech.compl.error,
+         ecmo.hr > 6) %>%
+  arrange(patient.id, run.no) %>%
+  distinct(patient.id, .keep_all = TRUE) %>%
+  select(center.id,
+         patient.id,
+         run.id,
+         ecmo.1000hr,
+         pre.existing.tracheostomy,
+         sex,
+         age..10yr,
+         weight..20kg,
+         sbp..20mmhg,
+         dbp..10mmhg,
+         cardiac.arrest,
+         primary.sepsis,
+         vasoact.med,
+         sepsis.primary.or.with.vasoact,
+         vent..log2,
+         ph..0.1,
+         pco2..20mmhg,
+         pf.ratio..log2,
+         lactate..log2,
+         pump.flow.4,
+         pump.fail.n.after.6hr,
+         pump.fail.hr.after.6hr,
+         pump.fail.event.after.6hr,
+         oxy.fail.n.after.6hr,
+         oxy.fail.hr.after.6hr,
+         oxy.fail.event.after.6hr,
+         circuit.clot.n.after.6hr,
+         circuit.clot.hr.after.6hr,
+         circuit.clot.event.after.6hr,
+         mech.compl.n.after.6hr,
+         mech.compl.hr.after.6hr,
+         mech.compl.event.after.6hr)
+
+runs.hr30 <-
+  runs %>%
+  filter(!mech.compl.error,
+         ecmo.hr > 30) %>%
+  arrange(patient.id, run.no) %>%
+  distinct(patient.id, .keep_all = TRUE) %>%
+  select(center.id,
+         patient.id,
+         run.id,
+         ecmo.1000hr,
+         pre.existing.tracheostomy,
+         sex,
+         age..10yr,
+         weight..20kg,
+         sbp.24..20mmhg,
+         dbp.24..10mmhg,
+         cardiac.arrest,
+         primary.sepsis,
+         vasoact.med,
+         sepsis.primary.or.with.vasoact,
+         vent..log2,
+         ph.24..0.1,
+         pco2.24..20mmhg,
+         pf.ratio.24..log2,
+         lactate.24..log2,
+         pump.flow.24,
+         pump.fail.n.after.30hr,
+         pump.fail.hr.after.30hr,
+         pump.fail.event.after.30hr,
+         oxy.fail.n.after.30hr,
+         oxy.fail.hr.after.30hr,
+         oxy.fail.event.after.30hr,
+         circuit.clot.n.after.30hr,
+         circuit.clot.hr.after.30hr,
+         circuit.clot.event.after.30hr,
+         mech.compl.n.after.30hr,
+         mech.compl.hr.after.30hr,
+         mech.compl.event.after.30hr)
+
+runs.wk1 <-
+  runs %>%
+  filter(!mech.compl.error,
+         ecmo.hr > 7 * 24) %>%
+  arrange(patient.id, run.no) %>%
+  distinct(patient.id, .keep_all = TRUE) %>%
+  select(center.id,
+         patient.id,
+         run.id,
+         ecmo.1000hr,
+         pre.existing.tracheostomy,
+         sex,
+         age..10yr,
+         weight..20kg,
+         sbp.24..20mmhg,
+         dbp.24..10mmhg,
+         cardiac.arrest,
+         primary.sepsis,
+         vasoact.med,
+         sepsis.primary.or.with.vasoact,
+         vent..log2,
+         ph.24..0.1,
+         pco2.24..20mmhg,
+         pf.ratio.24..log2,
+         lactate.24..log2,
+         pump.flow.24,
+         pump.fail.hr.after.1wk,
+         pump.fail.event.after.1wk,
+         oxy.fail.hr.after.1wk,
+         oxy.fail.event.after.1wk,
+         circuit.clot.hr.after.1wk,
+         circuit.clot.event.after.1wk)
+```
+
+```{r}
+save(runs, runs.bl, runs.hr6, runs.hr30, runs.wk1,
+     file = "ecmo.RData")
+```
+
+```{r}
+runs %>%
+  select(age.yr:pump.flow.24) %>%
+  names() %>%
+  paste(collapse = " + ") %>%
+  sprintf("~ %s", .) %>%
+  as.formula() %>%
+  tableby(data = runs) %>%
+  summary(digits = 1)
+```
+
+\pagebreak
+
+```{r}
+tibble(Variable =
+         runs %>%
+         select(sex:pump.flow.24) %>%
+         names(),
+       `% Missing` =
+         sapply(Variable,
+                function (x) 100 * mean(is.na(runs[[x]])))) %>%
+  arrange(desc(`% Missing`)) %>%
+  kable(digits = 1)
+```
+
+```{r}
+missing <-
+  runs %>%
+  select(run.id, center.id, year.ecls, sex:pump.flow.24) %>%
+  mutate_at(vars(-run.id, -year.ecls, -center.id),
+            function (x) is.na(x)) %>%
+  gather(key = "variable", value = "is.missing",
+         -run.id, -year.ecls, -center.id)
+
+missing %>%
+  group_by(variable, year.ecls) %>%
+  summarize(pct.missing = 100 * mean(is.missing),
+            .groups = "drop") %>%
+  ggplot() +
+  geom_line(aes(x = year.ecls, y = pct.missing)) +
+  theme(panel.grid.minor = element_blank()) +
+  facet_wrap(~ variable)
+```
+
+```{r}
+missing %>%
+  group_by(variable, center.id) %>%
+  summarize(pct.missing = 100 * mean(is.missing),
+            .groups = "drop") %>%
+  ggplot() +
+  geom_histogram(aes(x = pct.missing)) +
+  scale_y_continuous(name = "centers") +
+  facet_wrap(~ variable)
+```
+
+\pagebreak
+
+```{r}
+runs %>%
+  select(sex:pump.flow.24) %>%
+  select_if(is.numeric) %>%
+  gather(key = "variable", value = "value") %>%
+  ggplot() +
+  geom_histogram(aes(x = value)) +
+  facet_wrap(~ variable, scales = "free")
+```
+
+\pagebreak
+
+```{r}
+X <-
+  runs %>%
+  select(sex:pump.flow.24) %>%
+  names() %>%
+  paste(collapse = " + ") %>%
+  sprintf("~ %s - 1", .) %>%
+  as.formula() %>%
+  model.matrix(data =
+                 runs %>%
+                 mutate_all(function (x) as.numeric(is.na(x))))
+
+cor(X) %>%
+  corrplot()
+```
+
+\pagebreak
+
+```{r}
+na.act <- options()$na.action
+options(na.action = "na.pass")
+
+X <-
+  runs %>%
+  select(sex:pump.flow.24) %>%
+  select(-primary.sepsis,
+         -vasoact.med) %>%
+  names() %>%
+  paste(collapse = " + ") %>%
+  sprintf("~ %s - 1", .) %>%
+  as.formula() %>%
+  model.matrix(data = runs)
+
+cor(X, use = "pairwise.complete.obs") %>%
+  corrplot()
+
+options(na.action = na.act)
+```
+
+\pagebreak
+
+```{r}
+runs %>%
+  select(ecmo.1000hr:mech.compl.event.after.30hr) %>%
+  names() %>%
+  paste(collapse = " + ") %>%
+  sprintf("~ %s", .) %>%
+  as.formula() %>%
+  tableby(data = runs) %>%
+  summary(digits = 1)
+```

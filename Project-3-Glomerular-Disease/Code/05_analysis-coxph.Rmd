@@ -1,0 +1,122 @@
+---
+title: "Association of Socioeconomic Factors and Progression of Kidney Disease: Cox PH Analysis"
+author: "Camden Lopez"
+date: "`r Sys.Date()`"
+output: pdf_document
+classoption: landscape
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = TRUE,
+                      warning = TRUE,
+                      results = "asis",
+                      fig.width = 6,
+                      fig.height = 5)
+
+library(knitr)
+
+library(mice)
+library(tidyverse)
+library(survival)
+source("00_helpers.R")
+
+theme_set(theme_light())
+
+load("neptune.mi.RData")
+```
+
+```{r}
+pops <-
+  c(ped = "Pediatric", adult = "Adult")
+
+outcomes <-
+  c(cr = "Complete remission", pr = "ESRD or eGFR -40%")
+
+preds <-
+  c("race", "hispanic",
+    "er.visits", "hosp.visits", "well.visits",
+    "ins.status", "income",
+    "educ", "educ.par.max",
+    "english.prim")
+
+covars <-
+  c("sex", "age.bl",
+    "egfr.bl", "upcr.bl",
+    "imm.supp", "raas.blk",
+    "wgt.bl", "htn.bl",
+    "fam.hist")
+
+tbl <- NULL
+for (pop in names(pops)) {
+  cat("\n\n#", pops[pop], "\n\n")
+  for (out in names(outcomes)) {
+    cat("\n\n##", outcomes[out], "\n\n")
+    for (var in c(preds, covars)) {
+      if (pop == "ped" &
+          var %in% c("ins.status", "educ", "english.prim"))
+        next
+      if (pop == "adult" &
+          var %in% c("educ.par.max"))
+        next
+      
+      cat("\n\n###", paste0("`", var, "`"), "\n\n")
+      form <-
+        sprintf("Surv(bl.to.%s, %s == '%s') ~ %s + strata(cohort)",
+                out, out, ifelse(out == "cr", "Remission", "Progression"), var)
+      form.null <-
+        sprintf("Surv(bl.to.%s, %s == '%s') ~ strata(cohort)",
+                out, out, ifelse(out == "cr", "Remission", "Progression"))
+      mi.data <-
+        get(sprintf("mi.%s.%s", pop, out))
+      
+      mi.fits <-
+        with(mi.data, coxph(as.formula(form)))
+      mi.fits.null <-
+        with(mi.data, coxph(as.formula(form.null)))
+      
+      est <-
+        pool(mi.fits) %>%
+        summary(conf.int = TRUE, exponentiate = TRUE) %>%
+        select(term, estimate, ci.lower = `2.5 %`, ci.upper = `97.5 %`, p.value)
+      
+      est %>%
+        kable(digits = 3, caption = "Pooled estimates from MI.") %>%
+        print()
+      
+      d1 <- suppressWarnings(D1(mi.fits, mi.fits.null)$result)
+      
+      d1 %>%
+        kable(digits = 3, caption = "D1 test against null model.") %>%
+        print()
+      
+      tbl <-
+        bind_rows(tbl,
+                  est %>%
+                    mutate(overall = c(d1[1, "P(>F)"], rep(NA, n() - 1)),
+                           pop = pop,
+                           outcome = out))
+      
+      fit <-
+        coxph(as.formula(form), data = mi.data$data)
+      
+      tidy(fit, conf.int = TRUE, exponentiate = TRUE) %>%
+        select(term, estimate, conf.low, conf.high, p.value) %>%
+        kable(digits = 3, caption = "Complete-data estimates.") %>%
+        print()
+      
+      glance(fit) %>%
+        select(n, nevent, ends_with(".wald")) %>%
+        kable(digits = 3, caption = "Complete-data model summary.") %>%
+        print()
+      
+      zph <- cox.zph(fit)
+      cat("\n\nPH test P =", signif(zph$table[var, "p"], 2), "\n\n")
+      plot(zph)
+    }
+  }
+}
+
+tbl %>%
+  write_csv("coxph-univar.csv")
+```

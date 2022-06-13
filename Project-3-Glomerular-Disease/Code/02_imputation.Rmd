@@ -1,0 +1,184 @@
+---
+title: "Association of Socioeconomic Factors and Progression of Kidney Disease: Imputation"
+author: "Camden Lopez"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = FALSE,
+                      warning = FALSE,
+                      results = "asis",
+                      fig.width = 7,
+                      fig.height = 7)
+
+library(arsenal)
+library(knitr)
+library(mice)
+library(tidyverse)
+
+set.seed(125895)
+theme_set(theme_light())
+
+load("neptune.RData")
+
+mice.m <- 20
+mice.maxit <- 40
+# mice.m <- 5
+# mice.maxit <- 5
+```
+
+## Pediatric, CR
+
+```{r}
+pt.ped.cr <-
+  pt.ped %>%
+  filter(!is.na(bl.to.cr)) %>%
+  select(-bx.to.bl,
+         -bx.status,
+         -ped,
+         -cr.bl,
+         -esrd.bl,
+         -bl.to.pr,
+         -pr,
+         -bl.to.death,
+         -death)
+
+mi.ped.cr <- mice(data = pt.ped.cr, maxit = 0)
+mi.ped.cr$predictorMatrix[, "id"] <- 0
+mi.ped.cr <-
+  mice(data = pt.ped.cr,
+       m = mice.m,
+       method = mi.ped.cr$method,
+       predictorMatrix = mi.ped.cr$predictorMatrix,
+       maxit = mice.maxit,
+       printFlag = FALSE)
+imp.vars <- names(mi.ped.cr$method)[mi.ped.cr$method != ""]
+paste(imp.vars, collapse = " + ") %>%
+  paste("~ .it | .ms") %>%
+  as.formula() %>%
+  plot(mi.ped.cr, .)
+
+mi.ped.cr <-
+  complete(mi.ped.cr, action = "long", include = TRUE) %>%
+  mutate_if(is.ordered, factor, ordered = FALSE) %>%
+  as.mids()
+```
+
+## Pediatric, Progression
+
+```{r}
+pt.ped.pr <-
+  pt.ped %>%
+  filter(!is.na(bl.to.pr)) %>%
+  select(-bx.to.bl,
+         -bx.status,
+         -ped,
+         -cr.bl,
+         -esrd.bl,
+         -bl.to.cr,
+         -cr,
+         -bl.to.death,
+         -death)
+
+mi.ped.pr <- mice(data = pt.ped.pr, maxit = 0)
+mi.ped.pr$predictorMatrix[, "id"] <- 0
+mi.ped.pr <-
+  mice(data = pt.ped.pr,
+       m = mice.m,
+       method = mi.ped.pr$method,
+       predictorMatrix = mi.ped.pr$predictorMatrix,
+       maxit = mice.maxit,
+       printFlag = FALSE)
+imp.vars <- names(mi.ped.pr$method)[mi.ped.pr$method != ""]
+paste(imp.vars, collapse = " + ") %>%
+  paste("~ .it | .ms") %>%
+  as.formula() %>%
+  plot(mi.ped.pr, .)
+
+mi.ped.pr <-
+  complete(mi.ped.pr, action = "long", include = TRUE) %>%
+  mutate_if(is.ordered, factor, ordered = FALSE) %>%
+  as.mids()
+```
+
+## Adult, CR
+
+```{r}
+pt.adult.cr <-
+  pt.adult %>%
+  filter(!is.na(bl.to.cr)) %>%
+  select(-bx.to.bl,
+         -bx.status,
+         -ped,
+         -cr.bl,
+         -esrd.bl,
+         -bl.to.pr,
+         -pr,
+         -bl.to.death,
+         -death)
+
+mi.adult.cr <- mice(data = pt.adult.cr, maxit = 0)
+mi.adult.cr$predictorMatrix[, "id"] <- 0
+mi.adult.cr <-
+  mice(data = pt.adult.cr,
+       m = mice.m,
+       method = mi.adult.cr$method,
+       predictorMatrix = mi.adult.cr$predictorMatrix,
+       maxit = mice.maxit,
+       printFlag = FALSE)
+imp.vars <- names(mi.adult.cr$method)[mi.adult.cr$method != ""]
+paste(imp.vars, collapse = " + ") %>%
+  paste("~ .it | .ms") %>%
+  as.formula() %>%
+  plot(mi.adult.cr, .)
+
+mi.adult.cr <-
+  complete(mi.adult.cr, action = "long", include = TRUE) %>%
+  mutate_if(is.ordered, factor, ordered = FALSE) %>%
+  as.mids()
+```
+
+## Adult, Progression
+
+```{r}
+pt.adult.pr <-
+  pt.adult %>%
+  filter(!is.na(bl.to.pr)) %>%
+  select(-bx.to.bl,
+         -bx.status,
+         -ped,
+         -cr.bl,
+         -esrd.bl,
+         -bl.to.cr,
+         -cr,
+         -bl.to.death,
+         -death)
+
+mi.adult.pr <- mice(data = pt.adult.pr, maxit = 0)
+mi.adult.pr$predictorMatrix[, "id"] <- 0
+mi.adult.pr <-
+  mice(data = pt.adult.pr,
+       m = mice.m,
+       method = mi.adult.pr$method,
+       predictorMatrix = mi.adult.pr$predictorMatrix,
+       maxit = mice.maxit,
+       printFlag = FALSE)
+imp.vars <- names(mi.adult.pr$method)[mi.adult.pr$method != ""]
+paste(imp.vars, collapse = " + ") %>%
+  paste("~ .it | .ms") %>%
+  as.formula() %>%
+  plot(mi.adult.pr, .)
+
+mi.adult.pr <-
+  complete(mi.adult.pr, action = "long", include = TRUE) %>%
+  mutate_if(is.ordered, factor, ordered = FALSE) %>%
+  as.mids()
+```
+
+```{r}
+save(mi.ped.cr, mi.ped.pr,
+     mi.adult.cr, mi.adult.pr,
+     file = "neptune.mi.RData")
+```

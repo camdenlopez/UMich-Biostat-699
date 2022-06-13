@@ -1,0 +1,461 @@
+---
+title: "Association of Socioeconomic Factors and Progression of Kidney Disease: Data Prep"
+author: "Camden Lopez"
+date: "`r Sys.Date()`"
+output: pdf_document
+classoption: landscape
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      results = "asis",
+                      fig.width = 8,
+                      fig.height = 6)
+
+library(arsenal)
+library(corrplot)
+library(forcats)
+library(janitor)
+library(knitr)
+library(survival)
+library(tidyverse)
+source("00_helpers.R")
+
+theme_set(theme_light())
+```
+
+```{r}
+raw <-
+  read_csv("../Data/neptune_biostat class_2_24_2020.csv",
+           col_types = cols()) %>%
+  clean_names(sep_out = ".")
+
+pts <-
+  raw %>%
+  mutate(id = 1:n(),
+         bx.status =
+           case_when(is.na(daysbxtobl) ~ "No bx",
+                     daysbxtobl >= 0 ~ "Bx <= bl",
+                     daysbxtobl >= -60 ~ "Bx > bl within 60d",
+                     TRUE ~ "Bx > bl more than 60d"),
+         pat.cohort =
+           sub("^[1-5] - ", "", pat.cohort) %>%
+           sub("non", "Non", .),
+         pat.ped = (pat.ped == "yes"),
+         pat.sex = factor(sub("^[^A-Z]+", "", pat.sex)),
+         weightstatus =
+           sub("^[^A-Z]+", "", weightstatus) %>%
+           sub(" .*$", "", .) %>%
+           factor(levels =
+                    c("Normal", "Underweight",
+                      "Overweight", "Obese")) %>%
+           fct_collapse("Normal/Underweight" =
+                          c("Normal", "Underweight")) %>%
+           ordered(),
+         htnstatus =
+           sub("^[^A-Z]+", "", htnstatus) %>%
+           sub(" .*$", "", .) %>%
+           factor(levels =
+                    c("Normal",
+                      "Pre-hypertensive",
+                      "Hypertension")) %>%
+           ordered(),
+         immunosupressionv =
+           factor(!is.na(immunosupressionv),
+                  levels = c(FALSE, TRUE),
+                  labels = c("No", "Yes")),
+         raasblockv =
+           factor(!is.na(raasblockv),
+                  levels = c(FALSE, TRUE),
+                  labels = c("No", "Yes")),
+         pat.familykd.ever =
+           factor(pat.familykd.ever == "yes",
+                  levels = c(FALSE, TRUE),
+                  labels = c("No", "Yes")),
+         pat.race =
+           sub("^[^A-Z]+", "", pat.race),
+         pat.race =
+           ifelse(grepl("Native|Multi", pat.race),
+                  "Other/Multi-Racial", pat.race),
+         pat.race =
+           ifelse(pat.race %in% "Unknown",
+                  NA_character_, pat.race) %>%
+           factor(levels =
+                    c("White/Caucasian", "Black/African American",
+                      "Asian/Asian American", "Other/Multi-Racial")),
+         pat.hispanic =
+           sub("^[^A-Z]+", "", pat.hispanic),
+         pat.hispanic =
+           ifelse(pat.hispanic %in% "Unknown",
+                  NA_character_, pat.hispanic) %>%
+           factor(levels = c("Not Hispanic or Latino", "Hispanic or Latino")),
+         ervisits =
+           cut(ervisits,
+               breaks = c(-Inf, 0, 1, Inf),
+               labels = c("0", "1", "2+"),
+               ordered_result = TRUE),
+         hospvisits =
+           cut(hospvisits,
+               breaks = c(-Inf, 0, 1, Inf),
+               labels = c("0", "1", "2+"),
+               ordered_result = TRUE),
+         wellnessvisits =
+           cut(wellnessvisits,
+               breaks = c(-Inf, 0, 1, Inf),
+               labels = c("0", "1", "2+"),
+               ordered_result = TRUE),
+         insstat =
+           sub("^[^A-Z]+", "", insstat) %>%
+           factor(levels = c("Insured", "Not Insured")),
+         ahhincome =
+           ifelse(grepl("know", ahhincome),
+                  NA_character_, ahhincome),
+         ahhincome =
+           sub("\u0092", "'", ahhincome) %>%
+           sub("^[0-9: ]+", "", .) %>%
+           gsub("\\$", "", .) %>%
+           factor(levels =
+                    c("0 - 19,999", "20,000 - 39,999",
+                      "40,000 - 59,999", "60,000 - 79,999",
+                      "80,000 - 99,999", "100,000 +",
+                      "Don't wish to answer")) %>%
+           fct_collapse("20,000 - 59,999" =
+                          c("20,000 - 39,999",
+                            "40,000 - 59,999"),
+                        "60,000 - 99,999" =
+                          c("60,000 - 79,999",
+                            "80,000 - 99,999")),
+         edlevel =
+           case_when(grepl("^[1-9]:", edlevel) ~ "Less than high school",
+                     grepl("^1[0-4]:", edlevel) ~ "Less than high school",
+                     grepl("^1[5-6]:", edlevel) ~ "High school",
+                     grepl("^17:", edlevel) ~ "Associate's degree",
+                     grepl("^18:", edlevel) ~ "Bachelor's degree",
+                     grepl("^(19|20):", edlevel) ~ "Graduate degree",
+                     grepl("^95:", edlevel) ~ NA_character_) %>%
+           factor(levels =
+                    c("Less than high school", "High school",
+                      "Associate's degree", "Bachelor's degree",
+                      "Graduate degree")) %>%
+           fct_collapse("High school or less" =
+                          c("Less than high school", "High school")) %>%
+           ordered(),
+         medlevel =
+           case_when(grepl("^[1-9]:", medlevel) ~ "Less than high school",
+                     grepl("^1[0-4]:", medlevel) ~ "Less than high school",
+                     grepl("^1[5-6]:", medlevel) ~ "High school",
+                     grepl("^17:", medlevel) ~ "Associate's degree",
+                     grepl("^18:", medlevel) ~ "Bachelor's degree",
+                     grepl("^(19|20):", medlevel) ~ "Graduate degree",
+                     grepl("^95:", medlevel) ~ NA_character_) %>%
+           factor(levels =
+                    c("Less than high school", "High school",
+                      "Associate's degree", "Bachelor's degree",
+                      "Graduate degree")) %>%
+           fct_collapse("High school or less" =
+                          c("Less than high school", "High school")) %>%
+           ordered(),
+         fedlevel =
+           case_when(grepl("^[1-9]:", fedlevel) ~ "Less than high school",
+                     grepl("^1[0-4]:", fedlevel) ~ "Less than high school",
+                     grepl("^1[5-6]:", fedlevel) ~ "High school",
+                     grepl("^17:", fedlevel) ~ "Associate's degree",
+                     grepl("^18:", fedlevel) ~ "Bachelor's degree",
+                     grepl("^(19|20):", fedlevel) ~ "Graduate degree",
+                     grepl("^95:", fedlevel) ~ NA_character_) %>%
+           factor(levels =
+                    c("Less than high school", "High school",
+                      "Associate's degree", "Bachelor's degree",
+                      "Graduate degree")) %>%
+           fct_collapse("High school or less" =
+                          c("Less than high school", "High school")) %>%
+           ordered(),
+         educ.par.max =
+           pmax(medlevel, fedlevel, na.rm = TRUE),
+         primlang.english =
+           (primlang.english == "yes") %>%
+           factor(levels = c(TRUE, FALSE),
+                  labels = c("English", "Other than English")),
+         esrdatbl = (esrdatbl == "1: Yes"),
+         esrdoregfr40 = (esrdoregfr40 == "1: Yes"),
+         comprembybl = (comprembybl == "1: Yes"),
+         compremsincebl = (compremsincebl == "1: Yes"),
+         death = (death == "1: Yes"),
+         esrdoregfr40 =
+           case_when(is.na(esrdoregfr40) ~ NA_character_,
+                     esrdoregfr40 ~ "Progression",
+                     death ~ "Death",
+                     TRUE ~ "Censored") %>%
+           factor(levels = c("Censored", "Progression", "Death")),
+         compremsincebl =
+           case_when(is.na(compremsincebl) ~ NA_character_,
+                     compremsincebl ~ "Remission",
+                     death ~ "Death",
+                     TRUE ~ "Censored") %>%
+           factor(levels = c("Censored", "Remission", "Death"))) %>%
+  select(id,
+         bx.to.bl = daysbxtobl,
+         bx.status,
+         cohort = pat.cohort,
+         ped = pat.ped,
+         age.bl = pat.agev2,
+         sex = pat.sex,
+         htn.bl = htnstatus,
+         wgt.bl = weightstatus,
+         imm.supp = immunosupressionv,
+         raas.blk = raasblockv,
+         fam.hist = pat.familykd.ever,
+         egfr.bl = egfratbl,
+         upcr.bl = upcratbl,
+         race = pat.race,
+         hispanic = pat.hispanic,
+         er.visits = ervisits,
+         hosp.visits = hospvisits,
+         well.visits = wellnessvisits,
+         ins.status = insstat,
+         income = ahhincome,
+         educ = edlevel,
+         educ.par.max,
+         english.prim = primlang.english,
+         esrd.bl = esrdatbl,
+         bl.to.pr = daysbltoesrdoregfr40,
+         pr = esrdoregfr40,
+         cr.bl = comprembybl,
+         bl.to.cr = daysbltocomprem,
+         cr = compremsincebl,
+         bl.to.death = daysbltodeath,
+         death)
+```
+
+## Patient counts before re-assignments
+
+```{r}
+pts %>%
+  count(ped) %>%
+  kable(caption = "Pediatric vs adult")
+
+pts %>%
+  count(ped, bx.status) %>%
+  kable(caption = "Bx timing relative to bl")
+
+pts %>%
+  filter(ped) %>%
+  count(bx.status, cohort) %>%
+  kable(caption = "Diagnosis, peds")
+
+pts %>%
+  filter(!ped) %>%
+  count(bx.status, cohort) %>%
+  kable(caption = "Diagnosis, adults")
+```
+
+```{r}
+pt.final <-
+  pts %>%
+  mutate(ped = ifelse(!ped & is.na(bx.to.bl), TRUE, ped),
+         cohort =
+           ifelse(ped & is.na(bx.to.bl) & (!cohort %in% "Non-biopsy"),
+                  "Non-biopsy", cohort),
+         cohort =
+           ifelse(bx.status %in% "Bx > bl more than 60d",
+                  "Non-biopsy", cohort),
+         bx.status =
+           ifelse(ped & grepl("Bx > bl", bx.status) & cohort %in% "Non-biopsy",
+                  "No bx", bx.status),
+         bx.status =
+           ifelse(!ped & bx.status %in% "Bx > bl within 60d",
+                  "Bx <= bl", bx.status),
+         cohort =
+           factor(cohort,
+                  levels = c("Non-biopsy", "FSGS", "MCD", "MN", "Other")))
+
+pt.ped <-
+  pt.final %>%
+  filter(ped) %>%
+  mutate(cohort =
+           ifelse(cohort %in% "MN", "Other", as.character(cohort)) %>%
+           factor(levels = c("Non-biopsy", "FSGS", "MCD", "Other")),
+         age.bl =
+           cut(age.bl,
+               breaks = c(-Inf, 5, 10, 15, Inf),
+               labels = c("<6", "6-10", "11-15", "16+"),
+               ordered_result = TRUE),
+         egfr.bl =
+           cut(egfr.bl,
+               breaks = c(-Inf, 80, 100, 130, Inf),
+               right = FALSE,
+               labels = c("<80", "80-99", "100-129", "130+"),
+               ordered_result = TRUE),
+         upcr.bl =
+           cut(upcr.bl,
+               breaks = c(-Inf, 1.5, 5, 10, Inf),
+               right = FALSE,
+               labels = c("<1.5", "1.5-4.9", "5.0-9.9", "10.0+"),
+               ordered_result = TRUE)) %>%
+  select(-educ,
+         -ins.status,
+         -english.prim)
+
+pt.adult <-
+  pt.final %>%
+  filter(!ped) %>%
+  mutate(cohort =
+           factor(as.character(cohort),
+                  levels = c("FSGS", "MCD", "MN", "Other")),
+         age.bl =
+           cut(age.bl,
+               breaks = c(-Inf, 30, 50, 65, Inf),
+               right = FALSE,
+               labels = c("<30", "30-49", "50-64", "65+"),
+               ordered_result = TRUE),
+         egfr.bl =
+           cut(egfr.bl,
+               breaks = c(-Inf, 45, 80, 100, Inf),
+               right = FALSE,
+               labels = c("<45", "45-79", "80-99", "100+"),
+               ordered_result = TRUE),
+         upcr.bl =
+           cut(upcr.bl,
+               breaks = c(-Inf, 1.5, 3, 6, Inf),
+               right = FALSE,
+               labels = c("<1.5", "1.5-2.9", "3.0-5.9", "6.0+"),
+               ordered_result = TRUE)) %>%
+  select(-educ.par.max)
+```
+
+\pagebreak
+
+## Patient counts after re-assignments
+
+```{r}
+pt.final %>%
+  count(ped) %>%
+  kable(caption = "Pediatric vs adult")
+
+pt.final %>%
+  count(ped, bx.status) %>%
+  kable(caption = "Bx timing relative to bl")
+
+pt.final %>%
+  filter(ped) %>%
+  count(bx.status, cohort) %>%
+  mutate(pct = round(100 * n / sum(n), 1)) %>%
+  kable(caption = "Diagnosis, peds")
+
+pt.final %>%
+  filter(ped) %>%
+  count(cohort) %>%
+  mutate(pct = round(100 * n / sum(n), 1)) %>%
+  kable(caption = "Diagnosis, peds")
+
+pt.final %>%
+  filter(!ped) %>%
+  count(bx.status, cohort) %>%
+  mutate(pct = round(100 * n / sum(n), 1)) %>%
+  kable(caption = "Diagnosis, adults")
+```
+
+\pagebreak
+
+## Patient summaries
+
+```{r}
+tableby(cohort ~
+          age.bl +
+          sex +
+          htn.bl +
+          wgt.bl +
+          imm.supp +
+          raas.blk +
+          fam.hist +
+          egfr.bl +
+          upcr.bl +
+          race +
+          hispanic +
+          er.visits +
+          hosp.visits +
+          well.visits +
+          income +
+          educ.par.max +
+          esrd.bl +
+          bl.to.pr +
+          pr +
+          cr.bl +
+          bl.to.cr +
+          cr,
+        total = TRUE,
+        test = FALSE,
+        numeric.stats = c("Nmiss", "meansd", "medianq1q3", "range"),
+        data = pt.ped) %>%
+  summary(digits = 1,
+          title = "Pediatric patients")
+```
+
+\pagebreak
+
+```{r}
+tableby(cohort ~
+          age.bl +
+          sex +
+          htn.bl +
+          wgt.bl +
+          imm.supp +
+          raas.blk +
+          fam.hist +
+          egfr.bl +
+          upcr.bl +
+          race +
+          hispanic +
+          er.visits +
+          hosp.visits +
+          well.visits +
+          ins.status +
+          income +
+          educ +
+          english.prim +
+          esrd.bl +
+          bl.to.pr +
+          pr +
+          cr.bl +
+          bl.to.cr +
+          cr,
+        total = TRUE,
+        test = FALSE,
+        numeric.stats = c("Nmiss", "meansd", "medianq1q3", "range"),
+        data = pt.adult) %>%
+  summary(digits = 1,
+          title = "Adult patients")
+```
+
+\pagebreak
+
+```{r}
+tmp <-
+  raw %>%
+  filter(!is.na(esrdoregfr40)) %>%
+  mutate(event =
+           case_when(esrdoregfr40 %in% "1: Yes" &
+                       esrdoregfr40.lr %in% "1: Yes" ~
+                       "Event w/ or w/o LR",
+                     esrdoregfr40 %in% "1: Yes" ~
+                       "Event only w/o LR",
+                     esrdoregfr40.lr %in% "1: Yes" ~
+                       "Event only w/ LR",
+                     TRUE ~ "No event either way"),
+         time = daysbltoesrdoregfr40 / 365.25,
+         time.lr = daysbltoesrdoregfr40.lr / 365.25)
+
+ggplot(tmp) +
+  geom_point(aes(x = time,
+                 y = time.lr,
+                 color = event)) +
+  scale_x_continuous(name = "Event time w/o LR (years)") +
+  scale_y_continuous(name = "Event time w/ LR (years)") +
+  scale_color_discrete(name = "Event")
+```
+
+```{r}
+save(raw, pts,
+     pt.final, pt.ped, pt.adult,
+     file = "neptune.RData")
+```

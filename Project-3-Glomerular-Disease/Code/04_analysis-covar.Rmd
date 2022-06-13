@@ -1,0 +1,77 @@
+---
+title: "Association of Socioeconomic Factors and Progression of Kidney Disease: Covariate Analysis"
+author: "Camden Lopez"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = TRUE,
+                      warning = TRUE,
+                      results = "asis",
+                      fig.width = 7,
+                      fig.height = 7)
+
+library(arsenal)
+library(knitr)
+library(tidyverse)
+source("00_helpers.R")
+
+theme_set(theme_light())
+
+load("neptune.RData")
+```
+
+```{r}
+pops <-
+  c(ped = "Pediatric", adult = "Adult")
+
+preds <-
+  c("race", "hispanic",
+    "er.visits", "hosp.visits", "well.visits",
+    "ins.status", "income",
+    "educ", "educ.par.max",
+    "english.prim")
+
+covars <-
+  c("sex", "age.bl",
+    "egfr.bl", "upcr.bl",
+    "imm.supp", "raas.blk",
+    "wgt.bl", "htn.bl",
+    "fam.hist")
+
+for (pop in names(pops)) {
+  cat("\n\n#", pops[pop], "\n\n")
+  for (var in preds) {
+    if (pop == "ped" &
+        var %in% c("ins.status", "educ", "english.prim"))
+      next
+    if (pop == "adult" &
+        var %in% c("educ.par.max"))
+      next
+    
+    cat("\n\n###", paste0("`", var, "`"), "\n\n")
+    other.vars <-
+      c(preds, covars) %>% setdiff(var)
+    if (pop == "ped") {
+      other.vars <-
+        setdiff(other.vars, c("ins.status", "educ", "english.prim"))
+    } else {
+      other.vars <-
+        setdiff(other.vars, c("educ.par.max"))
+    }
+    data <-
+      get(sprintf("pt.%s", pop))
+    
+    tibble(covar = other.vars,
+           p.value = sapply(other.vars, function (x) {
+             mantelhaen.test(data[[var]], data[[x]],
+                             as.character(data$cohort))$p.value
+           })) %>%
+      mutate(p.value = sapply(p.value, format_pval)) %>%
+      kable() %>%
+      print()
+  }
+}
+```

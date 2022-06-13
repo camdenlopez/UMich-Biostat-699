@@ -1,0 +1,175 @@
+---
+title: "Secondary Analysis of BMI$^2$ Trial: Imputation"
+author: "Camden Lopez"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = FALSE,
+                      warning = FALSE,
+                      results = "asis",
+                      fig.width = 7,
+                      fig.height = 7)
+
+library(arsenal)
+library(knitr)
+library(mice)
+library(tidyverse)
+
+set.seed(835199)
+theme_set(theme_light())
+
+load("bmi2.RData")
+
+mice.m <- 20
+mice.maxit <- 60
+# mice.m <- 5
+# mice.maxit <- 5
+```
+
+```{r}
+pts.for.mi <-
+  pts %>%
+  select(-dropped,
+         -age.y1, -age.y2,
+         -starts_with("bmi.p"),
+         -starts_with("bmi.dist.med"),
+         -starts_with("snack.s2"))
+
+mi.pts <- mice(data = pts.for.mi, maxit = 0)
+mi.pts$predictorMatrix[, c("patient.id", "prac.id")] <- 0
+mi.pts <-
+  mice(data = pts.for.mi,
+       m = mice.m,
+       method = mi.pts$method,
+       predictorMatrix = mi.pts$predictorMatrix,
+       maxit = mice.maxit,
+       printFlag = FALSE)
+imp.vars <- names(mi.pts$method)[mi.pts$method != ""]
+paste(imp.vars, collapse = " + ") %>%
+  paste("~ .it | .ms") %>%
+  as.formula() %>%
+  plot(mi.pts, .)
+```
+
+```{r}
+mi.complete <-
+  mi.pts %>%
+  complete(action = "long", include = TRUE) %>%
+  left_join(pts %>%
+              select(patient.id,
+                     age.y1,
+                     age.y2),
+            by = "patient.id") %>%
+  # Impute missing ages based on approximate mean time to y1, y2 visits
+  mutate(age.y1 = ifelse(is.na(age.y1), age.bl + 1 + 0.5/12, age.y1),
+         age.y2 = ifelse(is.na(age.y2), age.bl + 2 + 0.5/12, age.y2),
+         snack.s2.bl = snack.s1.bl + (1/3) * (snack.s3.bl - snack.s1.bl),
+         snack.s2.y1 = snack.s1.y1 + (1/3) * (snack.s3.y1 - snack.s1.y1),
+         snack.s2.y2 = snack.s1.y2 + (1/3) * (snack.s3.y2 - snack.s1.y2))
+
+mi.bmi.calc <-
+  mi.complete %>%
+  select(.imp, .id, gender,
+         starts_with("age.")) %>%
+  gather(key = "time", value = "age",
+         starts_with("age.")) %>%
+  mutate(time = sub("age\\.", "", time),
+         agemos = floor(age * 12),
+         gender = as.character(gender)) %>%
+  left_join(mi.complete %>%
+              select(.imp, .id,
+                     starts_with("bmi.")) %>%
+              gather(key = "time", value = "bmi",
+                     starts_with("bmi.")) %>%
+              mutate(time = sub("bmi\\.", "", time)),
+            by = c(".imp", ".id", "time")) %>%
+  left_join(bmi.age %>%
+              mutate(gender = as.character(gender)) %>%
+              select(gender, agemos, l, m, s),
+            by = c("gender", "agemos")) %>%
+  mutate(bmi.z = ((bmi / m)^l - 1) / (l * s),
+         bmi.p.calc = 100 * pnorm(bmi.z),
+         bmi.dist.med = (bmi - m) / (m * s))
+
+mi.complete <-
+  mi.complete %>%
+  left_join(mi.bmi.calc %>%
+              select(.imp, .id, time, bmi.p.calc) %>%
+              mutate(time = paste0("bmi.p.calc.", time)) %>%
+              spread(key = time, value = bmi.p.calc),
+            by = c(".imp", ".id")) %>%
+  left_join(mi.bmi.calc %>%
+              select(.imp, .id, time, bmi.dist.med) %>%
+              mutate(time = paste0("bmi.dist.med.", time)) %>%
+              spread(key = time, value = bmi.dist.med),
+            by = c(".imp", ".id"))
+
+# Create long-form datasets with
+# change-from-bl outcomes
+mi.long <-
+  mi.complete %>%
+  gather(key = "time", value = "bmi.p.calc",
+         starts_with("bmi.p.calc.y")) %>%
+  mutate(time = sub("bmi\\.p\\.calc\\.", "", time)) %>%
+  left_join(mi.complete %>%
+              gather(key = "time", value = "bmi.dist.med",
+                     starts_with("bmi.dist.med.y")) %>%
+              mutate(time = sub("bmi\\.dist\\.med\\.", "", time)) %>%
+              select(.imp, .id, time, bmi.dist.med),
+            by = c(".imp", ".id", "time")) %>%
+  left_join(mi.complete %>%
+              gather(key = "time", value = "snack.s1",
+                     starts_with("snack.s1.y")) %>%
+              mutate(time = sub("snack\\.s1\\.", "", time)) %>%
+              select(.imp, .id, time, snack.s1),
+            by = c(".imp", ".id", "time")) %>%
+  left_join(mi.complete %>%
+              gather(key = "time", value = "snack.s2",
+                     starts_with("snack.s2.y")) %>%
+              mutate(time = sub("snack\\.s2\\.", "", time)) %>%
+              select(.imp, .id, time, snack.s2),
+            by = c(".imp", ".id", "time")) %>%
+  left_join(mi.complete %>%
+              gather(key = "time", value = "snack.s3",
+                     starts_with("snack.s3.y")) %>%
+              mutate(time = sub("snack\\.s3\\.", "", time)) %>%
+              select(.imp, .id, time, snack.s3),
+            by = c(".imp", ".id", "time")) %>%
+  mutate(bmi.p.calc.change =
+           bmi.p.calc - bmi.p.calc.bl,
+         bmi.dist.med.change =
+           bmi.dist.med - bmi.dist.med.bl,
+         snack.s1.change =
+           snack.s1 - snack.s1.bl,
+         snack.s2.change =
+           snack.s2 - snack.s2.bl,
+         snack.s3.change =
+           snack.s3 - snack.s3.bl,
+         .id =
+           case_when(time == "y1" ~ .id,
+                     time == "y2" ~ as.integer(.id + max(.id)))) %>%
+  inner_join(pts %>%
+               select(patient.id, bmi.y1, bmi.y2) %>%
+               gather(key = "time", value = "bmi", -patient.id) %>%
+               mutate(time = sub("bmi\\.", "", time)) %>%
+               filter(!is.na(bmi)) %>%
+               select(-bmi),
+             by = c("patient.id", "time")) %>%
+  mutate(time = factor(time, levels = c("y1", "y2")),
+         y1 = as.integer(time == "y1"),
+         y2 = as.integer(time == "y2"),
+         t = as.integer(time)) %>%
+  arrange(.imp, .id) %>%
+  as.mids()
+
+mi.pts <-
+  mi.complete %>%
+  as.mids()
+```
+
+```{r}
+save(mi.long, mi.pts, file = "bmi2.mi.RData")
+```

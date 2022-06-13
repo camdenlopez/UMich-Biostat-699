@@ -1,0 +1,476 @@
+---
+title: "Mechanical Complications of ECMO: Analysis of Event Counts"
+author: "Camden Lopez"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = FALSE,
+                      warning = FALSE,
+                      fig.width = 7,
+                      fig.height = 7)
+
+library(broom.mixed)
+library(knitr)
+library(lme4)
+library(mice)
+library(tidyverse)
+source("00_helpers.R")
+
+theme_set(theme_light())
+
+load("ecmo.mi.RData")
+```
+
+# Pump failure
+
+```{r}
+tbl.pump.fail <- NULL
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.bl,
+                 glmer(pump.fail.n ~
+                         sex +
+                         weight..20kg +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.bl,
+                 glmer(pump.fail.n ~
+                         age..10yr +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.bl,
+                 glmer(pump.fail.n ~
+                         sbp..20mmhg +
+                         dbp..10mmhg +
+                         ph..0.1 +
+                         pco2..20mmhg +
+                         lactate..log2 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.hr30,
+                 glmer(pump.fail.n.after.30hr ~
+                         sbp.24..20mmhg +
+                         dbp.24..10mmhg +
+                         ph.24..0.1 +
+                         pco2.24..20mmhg +
+                         lactate.24..log2 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr - 30/1000),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.bl,
+                 glmer(pump.fail.n ~
+                         cardiac.arrest +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.bl,
+                 glmer(pump.fail.n ~
+                         sepsis.primary.or.with.vasoact +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.bl %>%
+                   complete(action = "long", include = TRUE) %>%
+                   filter(!pre.existing.tracheostomy) %>%
+                   as.mids(),
+                 glmer(pump.fail.n ~
+                         vent..log2 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.bl,
+                 glmer(pump.fail.n ~
+                         pf.ratio..log2 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.hr30,
+                 glmer(pump.fail.n.after.30hr ~
+                         pf.ratio.24..log2 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr - 30/1000),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.hr6,
+                 glmer(pump.fail.n.after.6hr ~
+                         sex +
+                         weight..20kg +
+                         pump.flow.4 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr - 6/1000),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.pump.fail <-
+  bind_rows(tbl.pump.fail,
+            with(mi.hr30,
+                 glmer(pump.fail.n.after.30hr ~
+                         sex +
+                         weight..20kg +
+                         pump.flow.24 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr - 30/1000),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+```
+
+```{r}
+tbl.pump.fail <-
+  tbl.pump.fail %>%
+  mutate(rate.ratio =
+           sprintf("%.2f (%.2f, %.2f)",
+                   estimate, ci.lower, ci.upper),
+         p.val =
+           sapply(p.value, format_pval))
+
+tbl.pump.fail %>%
+  select(term, rate.ratio, p.val) %>%
+  kable()
+
+tbl.pump.fail %>%
+  write_csv("../Output/estimates.pump.fail.rr.csv")
+```
+
+\pagebreak
+
+# Oxygenator failure
+
+```{r}
+tbl.oxy.fail <- NULL
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.bl,
+                 glmer(oxy.fail.n ~
+                         sex +
+                         weight..20kg +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.bl,
+                 glmer(oxy.fail.n ~
+                         age..10yr +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.bl,
+                 glmer(oxy.fail.n ~
+                         sbp..20mmhg +
+                         dbp..10mmhg +
+                         ph..0.1 +
+                         pco2..20mmhg +
+                         lactate..log2 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.hr30,
+                 glmer(oxy.fail.n.after.30hr ~
+                         sbp.24..20mmhg +
+                         dbp.24..10mmhg +
+                         ph.24..0.1 +
+                         pco2.24..20mmhg +
+                         lactate.24..log2 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr - 30/1000),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.bl,
+                 glmer(oxy.fail.n ~
+                         cardiac.arrest +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.bl,
+                 glmer(oxy.fail.n ~
+                         sepsis.primary.or.with.vasoact +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.bl %>%
+                   complete(action = "long", include = TRUE) %>%
+                   filter(!pre.existing.tracheostomy) %>%
+                   as.mids(),
+                 glmer(oxy.fail.n ~
+                         vent..log2 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.bl,
+                 glmer(oxy.fail.n ~
+                         pf.ratio..log2 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.hr30,
+                 glmer(oxy.fail.n.after.30hr ~
+                         pf.ratio.24..log2 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr - 30/1000),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.hr6,
+                 glmer(oxy.fail.n.after.6hr ~
+                         sex +
+                         weight..20kg +
+                         pump.flow.4 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr - 6/1000),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.oxy.fail <-
+  bind_rows(tbl.oxy.fail,
+            with(mi.hr30,
+                 glmer(oxy.fail.n.after.30hr ~
+                         sex +
+                         weight..20kg +
+                         pump.flow.24 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr - 30/1000),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+```
+
+```{r}
+tbl.oxy.fail <-
+  tbl.oxy.fail %>%
+  mutate(rate.ratio =
+           sprintf("%.2f (%.2f, %.2f)",
+                   estimate, ci.lower, ci.upper),
+         p.val =
+           sapply(p.value, format_pval))
+
+tbl.oxy.fail %>%
+  select(term, rate.ratio, p.val) %>%
+  kable()
+
+tbl.oxy.fail %>%
+  write_csv("../Output/estimates.oxy.fail.rr.csv")
+```
+
+\pagebreak
+
+# Circuit clot
+
+```{r}
+tbl.circuit.clot <- NULL
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.bl,
+                 glmer(circuit.clot.n ~
+                         sex +
+                         weight..20kg +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.bl,
+                 glmer(circuit.clot.n ~
+                         age..10yr +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.bl,
+                 glmer(circuit.clot.n ~
+                         sbp..20mmhg +
+                         dbp..10mmhg +
+                         ph..0.1 +
+                         pco2..20mmhg +
+                         lactate..log2 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.hr30,
+                 glmer(circuit.clot.n.after.30hr ~
+                         sbp.24..20mmhg +
+                         dbp.24..10mmhg +
+                         ph.24..0.1 +
+                         pco2.24..20mmhg +
+                         lactate.24..log2 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr - 30/1000),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.bl,
+                 glmer(circuit.clot.n ~
+                         cardiac.arrest +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.bl,
+                 glmer(circuit.clot.n ~
+                         sepsis.primary.or.with.vasoact +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.bl %>%
+                   complete(action = "long", include = TRUE) %>%
+                   filter(!pre.existing.tracheostomy) %>%
+                   as.mids(),
+                 glmer(circuit.clot.n ~
+                         vent..log2 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.bl,
+                 glmer(circuit.clot.n ~
+                         pf.ratio..log2 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.hr30,
+                 glmer(circuit.clot.n.after.30hr ~
+                         pf.ratio.24..log2 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr - 30/1000),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.hr6,
+                 glmer(circuit.clot.n.after.6hr ~
+                         sex +
+                         weight..20kg +
+                         pump.flow.4 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr - 6/1000),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+
+tbl.circuit.clot <-
+  bind_rows(tbl.circuit.clot,
+            with(mi.hr30,
+                 glmer(circuit.clot.n.after.30hr ~
+                         sex +
+                         weight..20kg +
+                         pump.flow.24 +
+                         (1 | center.id),
+                       offset = log(ecmo.1000hr - 30/1000),
+                       family = poisson)) %>%
+              glmer_pool_and_estimate())
+```
+
+```{r}
+tbl.circuit.clot <-
+  tbl.circuit.clot %>%
+  mutate(rate.ratio =
+           sprintf("%.2f (%.2f, %.2f)",
+                   estimate, ci.lower, ci.upper),
+         p.val =
+           sapply(p.value, format_pval))
+
+tbl.circuit.clot %>%
+  select(term, rate.ratio, p.val) %>%
+  kable()
+
+tbl.circuit.clot %>%
+  write_csv("../Output/estimates.circuit.clot.rr.csv")
+```

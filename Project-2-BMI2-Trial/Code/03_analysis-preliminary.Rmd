@@ -1,0 +1,131 @@
+---
+title: "Secondary Analysis of BMI$^2$ Trial: Preliminary Analysis"
+author: "Camden Lopez"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = FALSE,
+                      warning = FALSE,
+                      fig.width = 7,
+                      fig.height = 7)
+
+library(broom.mixed)
+library(knitr)
+library(lme4)
+library(lmerTest)
+library(tidyverse)
+source("00_helpers.R")
+
+theme_set(theme_light())
+
+load("bmi2.RData")
+```
+
+## BMI distance from median
+
+```{r fig.width = 5.5, fig.height = 4.5}
+pts %>%
+  ggplot() +
+  geom_point(aes(x = qnorm(bmi.p.calc.y2/100),
+                 y = bmi.p.calc.y2)) +
+  geom_point(aes(x = qnorm(bmi.p.calc.y2/100),
+                 y = bmi.dist.med.y2 * 10),
+             color = "blue") +
+  scale_x_continuous(name = "BMI z-score corresponding to percentile") +
+  scale_y_continuous(name = "BMI percentile used in primary analysis",
+                     sec.axis = sec_axis(trans = function (x) x / 10,
+                                         name = "BMI distance from median proposed by Freedman")) +
+  theme(axis.title.y.right = element_text(color = "blue"))
+```
+
+\pagebreak
+
+```{r}
+fit <-
+  lmer(bmi.dist.med.y2 ~
+         mi.treatment +
+         age.bl +
+         race +
+         gender +
+         bmi.dist.med.bl +
+         parent.income +
+         parent.bmi.bl +
+         (1 | prac.id),
+       data = pts)
+
+fit %>%
+  tidy(effects = "fixed") %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  select(term, estimate, std.error, p.value) %>%
+  kable(digits = 2,
+        caption = "Imitating the primary analysis, but using BMI 'distance from the median' z-score.")
+```
+
+```{r}
+fit.null <-
+  update(fit, ~ . - mi.treatment)
+```
+
+Overall P-value for MI treatment: `r anova(fit.null, fit)[["Pr(>Chisq)"]][2] %>% format_pval()`.
+
+```{r eval = FALSE}
+fit <-
+  lmer(bmi.dist.med.ref.y2 ~
+         mi.treatment +
+         age.bl +
+         race +
+         gender +
+         bmi.dist.med.bl +
+         parent.income +
+         parent.bmi.bl +
+         (1 | prac.id),
+       data = pts)
+
+fit %>%
+  tidy(effects = "fixed") %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  select(term, estimate, std.error, p.value) %>%
+  kable(digits = 2,
+        caption = "Imitating the primary analysis, but using BMI 'distance from the median' scaled to 20-year-old BMI (kg/m2).")
+```
+
+```{r eval = FALSE}
+fit.null <-
+  update(fit, ~ . - mi.treatment)
+```
+
+\pagebreak
+
+## Snack index score
+
+```{r}
+fit <-
+  lmer(snack.s2.y2 ~
+         mi.treatment +
+         age.bl +
+         race +
+         gender +
+         bmi.bl +
+         snack.s2.bl +
+         parent.income +
+         parent.bmi.bl +
+         (1 | prac.id),
+       data = pts)
+
+fit %>%
+  tidy(effects = "fixed") %>%
+  mutate(p.value = sapply(p.value, format_pval)) %>%
+  select(term, estimate, std.error, p.value) %>%
+  kable(digits = 2,
+        caption = "Imitating the primary analysis, but using an unhealthy snack score as the outcome, and adjusting for baseline snack score.")
+```
+
+```{r}
+fit.null <-
+  update(fit, ~ . - mi.treatment)
+```
+
+Overall P-value for MI treatment: `r anova(fit.null, fit)[["Pr(>Chisq)"]][2] %>% format_pval()`.
